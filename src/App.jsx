@@ -1082,14 +1082,14 @@ function ProgressTab({ data, exercises }) {
   );
 }
 
-function ClientMessages({ data, onSave }) {
+function ClientMessages({ data, onSave, client }) {
   const [text, setText] = useState("");
   const messages = data.messages || [];
 
   const send = async () => {
     if (!text.trim()) return;
     const next = [...messages, { id: uid(), from: "client", text: text.trim(), date: new Date().toISOString() }];
-    await onSave({ ...data, messages: next });
+    await onSave({ ...data, messages: next });fetch("https://ntfy.sh/xcel-pt-messages2026", { method: "POST", body: `${client?.name || "A client"}: ${text.trim()}`, headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" }, }).catch(() => {});
     setText("");
   };
 
