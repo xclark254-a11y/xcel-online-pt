@@ -93,7 +93,9 @@ function computeConsistency(logs) {
 
 function computeBMI(weightLb, heightIn) {
   if (!weightLb || !heightIn) return null;
-  return (703 * Number(weightLb)) / (Number(heightIn) * Number(heightIn));
+  let h = Number(heightIn);
+  if (h > 100) h = h / 2.54; // guard against someone entering height in centimeters
+  return (703 * Number(weightLb)) / (h * h);
 }
 
 function bmiCategory(bmi) {
@@ -106,8 +108,10 @@ function bmiCategory(bmi) {
 
 function computeBMR(weightLb, heightIn, age, gender) {
   if (!weightLb || !heightIn || !age) return null;
+  let h = Number(heightIn);
+  if (h > 100) h = h / 2.54; // guard against centimeters
   const kg = Number(weightLb) * 0.453592;
-  const cm = Number(heightIn) * 2.54;
+  const cm = h * 2.54;
   const base = 10 * kg + 6.25 * cm - 5 * Number(age);
   if (gender === "Male") return Math.round(base + 5);
   if (gender === "Female") return Math.round(base - 161);
@@ -824,7 +828,7 @@ function IntakeViewer({ clientId }) {
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.6 }}>
           <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
-          <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${intake.heightIn} in` : "—"} / {intake.gender || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${Math.floor(intake.heightIn / 12)}'${intake.heightIn % 12}"` : "—"} / {intake.gender || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
           {latestStats && (
@@ -1276,20 +1280,24 @@ function MessagesTab({ clients }) {
 // ============================================================
 function IntakeForm({ data, onSave, onClose }) {
   const existing = data.intake || {};
+  const existingTotalIn = Number(existing.heightIn) || 0;
   const [form, setForm] = useState({
     goal: existing.goal || "",
     experience: existing.experience || "Beginner",
     equipment: existing.equipment || "",
     injuries: existing.injuries || "",
     age: existing.age || "",
-    heightIn: existing.heightIn || "",
+    heightFt: existingTotalIn ? Math.floor(existingTotalIn / 12) : "",
+    heightInRem: existingTotalIn ? existingTotalIn % 12 : "",
     gender: existing.gender || "Prefer not to say",
   });
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
-    await onSave({ ...data, intake: { ...form, submittedAt: new Date().toISOString() } });
+    const heightIn = (Number(form.heightFt) || 0) * 12 + (Number(form.heightInRem) || 0);
+    const { heightFt, heightInRem, ...rest } = form;
+    await onSave({ ...data, intake: { ...rest, heightIn: heightIn || "", submittedAt: new Date().toISOString() } });
     setSaving(false);
     onClose();
   };
@@ -1314,12 +1322,9 @@ function IntakeForm({ data, onSave, onClose }) {
           </select>
         </Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
           <Field label="Age">
             <input type="number" style={inputStyle} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
-          </Field>
-          <Field label="Height (in)">
-            <input type="number" style={inputStyle} placeholder="e.g. 68" value={form.heightIn} onChange={(e) => setForm({ ...form, heightIn: e.target.value })} />
           </Field>
           <Field label="Gender">
             <select style={inputStyle} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
@@ -1327,6 +1332,12 @@ function IntakeForm({ data, onSave, onClose }) {
               <option>Female</option>
               <option>Prefer not to say</option>
             </select>
+          </Field>
+          <Field label="Height — feet">
+            <input type="number" style={inputStyle} placeholder="5" value={form.heightFt} onChange={(e) => setForm({ ...form, heightFt: e.target.value })} />
+          </Field>
+          <Field label="Height — inches">
+            <input type="number" style={inputStyle} placeholder="8" value={form.heightInRem} onChange={(e) => setForm({ ...form, heightInRem: e.target.value })} />
           </Field>
         </div>
 
