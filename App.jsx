@@ -1668,7 +1668,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
           <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT · v1.1</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
