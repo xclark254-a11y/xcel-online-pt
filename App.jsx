@@ -1,11 +1,203 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame } from "lucide-react";
+import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+function toYouTubeEmbed(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    let id = "";
+    if (u.hostname.includes("youtu.be")) id = u.pathname.slice(1);
+    else if (u.searchParams.get("v")) id = u.searchParams.get("v");
+    else if (u.pathname.includes("/shorts/")) id = u.pathname.split("/shorts/")[1];
+    return id ? `https://www.youtube.com/embed/${id}` : null;
+  } catch {
+    return null;
+  }
+}
+function exerciseSearchUrl(name) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " exercise proper form")}`;
+}
+
+const OZ_TO_G = 28.3495;
+
+async function searchFoods(query) {
+  if (!query.trim() || !USDA_API_KEY || USDA_API_KEY === "YOUR_USDA_API_KEY") return [];
+  try {
+    const res = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(query)}&pageSize=8&dataType=Foundation,SR%20Legacy,Branded`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.foods || []).map((f) => {
+      const per100g = {};
+      (f.foodNutrients || []).forEach((n) => {
+        const name = (n.nutrientName || "").toLowerCase();
+        if (name.includes("energy")) per100g.calories = n.value;
+        else if (name.includes("protein")) per100g.protein = n.value;
+        else if (name.includes("carbohydrate")) per100g.carbs = n.value;
+        else if (name.includes("total lipid") || name.includes("fat")) per100g.fat = n.value;
+      });
+      return { fdcId: f.fdcId, name: f.description, per100g };
+    }).filter((f) => f.per100g.calories !== undefined);
+  } catch (e) {
+    return [];
+  }
+}
+
+const MEAL_OPTIONS = {
+  breakfast: [
+    { name: "Egg whites, oats & banana", calories: 380, protein: 28, carbs: 52, fat: 6, ingredients: ["6 egg whites", "1/2 cup dry oats", "1 medium banana"] },
+    { name: "Greek yogurt, berries & granola", calories: 320, protein: 24, carbs: 42, fat: 6, ingredients: ["1 cup nonfat Greek yogurt", "1/2 cup mixed berries", "1/4 cup granola"] },
+    { name: "3 whole eggs & whole wheat toast", calories: 420, protein: 26, carbs: 34, fat: 20, ingredients: ["3 whole eggs", "2 slices whole wheat toast", "1 tsp butter"] },
+    { name: "Protein oatmeal with peanut butter", calories: 480, protein: 32, carbs: 50, fat: 16, ingredients: ["1 cup dry oats", "1 scoop protein powder", "1 tbsp peanut butter"] },
+    { name: "Turkey bacon, eggs & avocado toast", calories: 460, protein: 30, carbs: 30, fat: 24, ingredients: ["3 slices turkey bacon", "2 whole eggs", "1 slice whole wheat toast", "1/4 avocado"] },
+    { name: "Protein smoothie (whey, banana, milk)", calories: 350, protein: 35, carbs: 40, fat: 6, ingredients: ["1 scoop whey protein", "1 medium banana", "1 cup skim milk"] },
+    { name: "Cottage cheese, pineapple & almonds", calories: 300, protein: 26, carbs: 28, fat: 10, ingredients: ["1 cup low-fat cottage cheese", "1/2 cup pineapple chunks", "10 almonds"] },
+    { name: "Breakfast burrito (eggs, black beans, salsa)", calories: 500, protein: 28, carbs: 48, fat: 20, ingredients: ["3 whole eggs", "1 large whole wheat tortilla", "1/2 cup black beans", "2 tbsp salsa"] },
+    { name: "Overnight oats with chia & almond milk", calories: 340, protein: 14, carbs: 52, fat: 10, ingredients: ["1/2 cup dry oats", "1 tbsp chia seeds", "1 cup almond milk", "1 tsp honey"] },
+    { name: "Egg & veggie scramble with cheese", calories: 360, protein: 26, carbs: 12, fat: 24, ingredients: ["3 whole eggs", "1/2 cup mixed vegetables", "1/4 cup shredded cheese"] },
+    { name: "Bagel with lox & cream cheese", calories: 440, protein: 24, carbs: 50, fat: 16, ingredients: ["1 whole wheat bagel", "2 oz smoked salmon", "2 tbsp cream cheese"] },
+    { name: "Protein pancakes with syrup", calories: 400, protein: 30, carbs: 46, fat: 10, ingredients: ["1 scoop protein powder", "1/2 cup oat flour pancake mix", "2 tbsp light syrup"] },
+  ],
+  lunch: [
+    { name: "Grilled chicken, rice & broccoli", calories: 520, protein: 45, carbs: 55, fat: 10, ingredients: ["6 oz grilled chicken breast", "1 cup cooked white rice", "1 cup steamed broccoli"] },
+    { name: "Turkey wrap with veggies & hummus", calories: 460, protein: 32, carbs: 44, fat: 16, ingredients: ["5 oz sliced turkey breast", "1 large whole wheat wrap", "2 tbsp hummus", "mixed veggies"] },
+    { name: "Tuna salad over greens", calories: 380, protein: 38, carbs: 14, fat: 18, ingredients: ["6 oz canned tuna", "2 tbsp light mayo", "2 cups mixed greens"] },
+    { name: "Chicken burrito bowl (rice, beans, salsa)", calories: 620, protein: 42, carbs: 68, fat: 16, ingredients: ["6 oz grilled chicken", "1 cup cooked rice", "1/2 cup black beans", "2 tbsp salsa"] },
+    { name: "Salmon, quinoa & asparagus", calories: 560, protein: 40, carbs: 42, fat: 22, ingredients: ["6 oz baked salmon", "3/4 cup cooked quinoa", "1 cup asparagus"] },
+    { name: "Turkey chili with cornbread", calories: 540, protein: 36, carbs: 52, fat: 18, ingredients: ["6 oz ground turkey", "1/2 cup kidney beans", "1 small slice cornbread"] },
+    { name: "Steak & sweet potato", calories: 600, protein: 44, carbs: 46, fat: 22, ingredients: ["6 oz sirloin steak", "1 medium sweet potato", "1 tsp olive oil"] },
+    { name: "Chicken Caesar salad (light dressing)", calories: 450, protein: 38, carbs: 18, fat: 24, ingredients: ["6 oz grilled chicken", "2 cups romaine lettuce", "2 tbsp light Caesar dressing", "1 tbsp parmesan"] },
+    { name: "Shrimp stir-fry with brown rice", calories: 500, protein: 34, carbs: 58, fat: 12, ingredients: ["6 oz shrimp", "1 cup cooked brown rice", "1 cup mixed stir-fry vegetables"] },
+    { name: "Turkey sandwich, whole grain bread", calories: 420, protein: 28, carbs: 46, fat: 12, ingredients: ["4 oz sliced turkey", "2 slices whole grain bread", "1 tsp mustard", "lettuce & tomato"] },
+    { name: "Beef & veggie stir-fry", calories: 540, protein: 38, carbs: 40, fat: 22, ingredients: ["6 oz lean beef strips", "1.5 cups mixed vegetables", "1 tbsp sesame oil"] },
+    { name: "Lentil soup with whole grain roll", calories: 400, protein: 20, carbs: 60, fat: 8, ingredients: ["1.5 cups lentil soup", "1 small whole grain roll"] },
+  ],
+  dinner: [
+    { name: "Baked chicken breast, rice & green beans", calories: 550, protein: 46, carbs: 50, fat: 12, ingredients: ["7 oz baked chicken breast", "1 cup cooked rice", "1 cup green beans"] },
+    { name: "Grilled salmon, sweet potato & spinach", calories: 580, protein: 40, carbs: 44, fat: 22, ingredients: ["6 oz grilled salmon", "1 medium sweet potato", "1 cup sautéed spinach"] },
+    { name: "Lean ground beef tacos (corn tortillas)", calories: 600, protein: 38, carbs: 50, fat: 24, ingredients: ["6 oz lean ground beef (93/7)", "3 corn tortillas", "1/4 cup shredded cheese", "salsa"] },
+    { name: "Turkey meatballs with whole wheat pasta", calories: 620, protein: 42, carbs: 60, fat: 18, ingredients: ["6 oz turkey meatballs", "1.5 cups whole wheat pasta", "1/2 cup marinara sauce"] },
+    { name: "Grilled shrimp skewers & couscous", calories: 480, protein: 36, carbs: 46, fat: 12, ingredients: ["6 oz grilled shrimp", "1 cup cooked couscous", "grilled vegetables"] },
+    { name: "Pork tenderloin, roasted potatoes & carrots", calories: 560, protein: 40, carbs: 44, fat: 18, ingredients: ["6 oz pork tenderloin", "1 cup roasted potatoes", "1 cup carrots"] },
+    { name: "Chicken stir-fry with mixed vegetables", calories: 500, protein: 40, carbs: 38, fat: 16, ingredients: ["6 oz chicken breast", "2 cups mixed stir-fry vegetables", "1 tbsp stir-fry sauce"] },
+    { name: "Baked cod, quinoa & roasted vegetables", calories: 460, protein: 36, carbs: 40, fat: 12, ingredients: ["7 oz baked cod", "3/4 cup cooked quinoa", "1 cup roasted vegetables"] },
+    { name: "Turkey burger (no bun) with side salad", calories: 440, protein: 38, carbs: 16, fat: 24, ingredients: ["7 oz turkey burger patty", "2 cups side salad", "1 tbsp olive oil dressing"] },
+    { name: "Beef & broccoli over rice", calories: 580, protein: 38, carbs: 54, fat: 18, ingredients: ["6 oz lean beef strips", "1 cup steamed broccoli", "1 cup cooked rice"] },
+    { name: "Grilled chicken fajitas (peppers & onions)", calories: 520, protein: 40, carbs: 42, fat: 18, ingredients: ["6 oz grilled chicken", "2 whole wheat tortillas", "1 cup peppers & onions"] },
+    { name: "Stuffed bell peppers (turkey & rice)", calories: 480, protein: 32, carbs: 44, fat: 16, ingredients: ["2 bell peppers", "5 oz ground turkey", "1/2 cup cooked rice"] },
+  ],
+  snack: [
+    { name: "Protein shake", calories: 160, protein: 25, carbs: 6, fat: 3, ingredients: ["1 scoop whey protein", "1 cup water or almond milk"] },
+    { name: "Apple with peanut butter", calories: 220, protein: 6, carbs: 28, fat: 10, ingredients: ["1 medium apple", "1 tbsp peanut butter"] },
+    { name: "Greek yogurt cup", calories: 140, protein: 15, carbs: 12, fat: 3, ingredients: ["1 cup nonfat Greek yogurt"] },
+    { name: "Handful of almonds", calories: 170, protein: 6, carbs: 6, fat: 15, ingredients: ["1 oz almonds (about 23)"] },
+    { name: "Rice cakes with almond butter", calories: 200, protein: 6, carbs: 24, fat: 9, ingredients: ["2 rice cakes", "1 tbsp almond butter"] },
+    { name: "Cottage cheese with berries", calories: 160, protein: 18, carbs: 12, fat: 4, ingredients: ["3/4 cup low-fat cottage cheese", "1/4 cup berries"] },
+    { name: "Protein bar", calories: 210, protein: 20, carbs: 22, fat: 7, ingredients: ["1 protein bar"] },
+    { name: "Hard-boiled eggs (2)", calories: 140, protein: 12, carbs: 1, fat: 10, ingredients: ["2 hard-boiled eggs"] },
+    { name: "Beef jerky", calories: 120, protein: 14, carbs: 4, fat: 5, ingredients: ["1 oz beef jerky"] },
+    { name: "Baby carrots with hummus", calories: 150, protein: 5, carbs: 18, fat: 7, ingredients: ["1 cup baby carrots", "2 tbsp hummus"] },
+  ],
+};
+
+function generateMealPlan(targets) {
+  const cal = Number(targets.calories) || 2000;
+  const slots = [
+    { key: "breakfast", label: "Breakfast", share: 0.25 },
+    { key: "lunch", label: "Lunch", share: 0.3 },
+    { key: "dinner", label: "Dinner", share: 0.35 },
+    { key: "snack", label: "Snack", share: 0.1 },
+  ];
+  const meals = slots.map((slot) => {
+    const target = cal * slot.share;
+    const options = [...MEAL_OPTIONS[slot.key]].sort((a, b) => Math.abs(a.calories - target) - Math.abs(b.calories - target));
+    const closest = options.slice(0, 4);
+    const pick = closest[Math.floor(Math.random() * closest.length)];
+    return { ...pick, slot: slot.label };
+  });
+  const totals = meals.reduce((acc, m) => ({
+    calories: acc.calories + m.calories,
+    protein: acc.protein + m.protein,
+    carbs: acc.carbs + m.carbs,
+    fat: acc.fat + m.fat,
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  return { meals, totals };
+}
+
+function macrosForOz(per100g, oz) {
+  const grams = (Number(oz) || 0) * OZ_TO_G;
+  const scale = grams / 100;
+  return {
+    calories: Math.round((per100g.calories || 0) * scale),
+    protein: Math.round((per100g.protein || 0) * scale),
+    carbs: Math.round((per100g.carbs || 0) * scale),
+    fat: Math.round((per100g.fat || 0) * scale),
+  };
+}
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+function mondayOf(dateISO) {
+  const d = new Date(dateISO + "T00:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function computeConsistency(logs) {
+  const weekKeys = new Set((logs || []).map((l) => mondayOf(l.date)));
+  let cursor = mondayOf(todayISO());
+  if (!weekKeys.has(cursor)) {
+    const d = new Date(cursor + "T00:00:00");
+    d.setDate(d.getDate() - 7);
+    cursor = d.toISOString().slice(0, 10);
+  }
+  let streak = 0;
+  while (weekKeys.has(cursor)) {
+    streak++;
+    const d = new Date(cursor + "T00:00:00");
+    d.setDate(d.getDate() - 7);
+    cursor = d.toISOString().slice(0, 10);
+  }
+  const total = (logs || []).length;
+  const milestones = [1, 5, 10, 25, 50, 100, 200];
+  const achieved = milestones.filter((m) => total >= m).pop() || 0;
+  const next = milestones.find((m) => total < m) || null;
+  return { weeklyStreak: streak, totalWorkouts: total, achievedMilestone: achieved, nextMilestone: next };
+}
+
+function computeBMI(weightLb, heightIn) {
+  if (!weightLb || !heightIn) return null;
+  let h = Number(heightIn);
+  if (h > 100) h = h / 2.54; // guard against someone entering height in centimeters
+  return (703 * Number(weightLb)) / (h * h);
+}
+
+function bmiCategory(bmi) {
+  if (bmi === null) return "";
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 25) return "Normal";
+  if (bmi < 30) return "Overweight";
+  return "Obese";
+}
+
+function computeBMR(weightLb, heightIn, age, gender) {
+  if (!weightLb || !heightIn || !age) return null;
+  let h = Number(heightIn);
+  if (h > 100) h = h / 2.54; // guard against centimeters
+  const kg = Number(weightLb) * 0.453592;
+  const cm = h * 2.54;
+  const base = 10 * kg + 6.25 * cm - 5 * Number(age);
+  if (gender === "Male") return Math.round(base + 5);
+  if (gender === "Female") return Math.round(base - 161);
+  return Math.round(base - 78); // average estimate when gender isn't specified
+}
 
 // ---------- seed data ----------
 const SEED_EXERCISES = [
@@ -91,10 +283,337 @@ const SEED_EXERCISES = [
   { id: uid(), name: "Kettlebell Clean and Press", muscle: "Full Body", equipment: "Kettlebell", instructions: "Clean the bell to the rack position in one motion, then press it overhead, lower back to the rack and down." },
   { id: uid(), name: "Sled Push", muscle: "Full Body", equipment: "Machine", instructions: "Low athletic stance, drive through the legs pushing the sled forward in controlled, powerful steps." },
   { id: uid(), name: "Turkish Get-Up", muscle: "Full Body", equipment: "Kettlebell", instructions: "From lying down to standing while keeping a kettlebell locked out overhead the entire time, then reverse." },
+  { id: uid(), name: "Slam Ball Slam", muscle: "Full Body", equipment: "Slam Ball", instructions: "Lift the ball overhead and slam it down as hard as possible, squatting to catch the bounce, repeat explosively." },
+  { id: uid(), name: "Rotational Slam", muscle: "Core", equipment: "Slam Ball", instructions: "Rotate the torso and slam the ball down to one side, alternating sides with an explosive twisting motion." },
+  { id: uid(), name: "Overhead Slam to Squat", muscle: "Full Body", equipment: "Slam Ball", instructions: "Slam the ball down then immediately drop into a squat to scoop it back up before repeating." },
+  { id: uid(), name: "Slam Ball Chest Pass", muscle: "Chest", equipment: "Slam Ball", instructions: "Hold the ball at the chest and throw it explosively into a wall or the floor in front of you, catching the rebound." },
+  { id: uid(), name: "Slam Ball Sit-Up Toss", muscle: "Core", equipment: "Slam Ball", instructions: "Lying down, toss the ball up on the sit-up, catch it at the top, and control it back down." },
+  { id: uid(), name: "Single-Arm Slam", muscle: "Shoulders", equipment: "Slam Ball", instructions: "Slam the ball down to one side using a single-arm motion, alternating arms each rep." },
+  { id: uid(), name: "Slam Ball Lunge with Twist", muscle: "Legs", equipment: "Slam Ball", instructions: "Hold the ball at the chest, lunge forward, and twist toward the front leg before returning to standing." },
+  { id: uid(), name: "Slam Ball Squat Throw", muscle: "Legs", equipment: "Slam Ball", instructions: "Squat down holding the ball, then explosively stand and throw it overhead or to a partner." },
+  { id: uid(), name: "Kettlebell Snatch", muscle: "Full Body", equipment: "Kettlebell", instructions: "Swing the bell between the legs then explosively pull and punch the hand through to lockout overhead in one motion." },
+  { id: uid(), name: "Kettlebell High Pull", muscle: "Shoulders", equipment: "Kettlebell", instructions: "Swing the bell up, pulling the elbow high toward chin height, then let it swing back down." },
+  { id: uid(), name: "Single-Arm Kettlebell Row", muscle: "Back", equipment: "Kettlebell", instructions: "Hinge forward with one hand on a bench, row the bell to the hip keeping the elbow close, lower with control." },
+  { id: uid(), name: "Kettlebell Halo", muscle: "Shoulders", equipment: "Kettlebell", instructions: "Circle the kettlebell around the head, keeping the core braced and the movement slow and controlled." },
+  { id: uid(), name: "Kettlebell Windmill", muscle: "Core", equipment: "Kettlebell", instructions: "Press the bell overhead, hinge sideways at the hips reaching the free hand toward the floor while keeping the arm locked out." },
+  { id: uid(), name: "Kettlebell Figure-8", muscle: "Core", equipment: "Kettlebell", instructions: "Pass the kettlebell between and around the legs in a figure-8 pattern, keeping the knees soft." },
+  { id: uid(), name: "Kettlebell Deadlift", muscle: "Legs", equipment: "Kettlebell", instructions: "Stand over the bell, hinge down to grip it, drive through the heels to stand tall, squeeze the glutes at the top." },
+  { id: uid(), name: "Kettlebell Single-Arm Overhead Press", muscle: "Shoulders", equipment: "Kettlebell", instructions: "Press the bell from the rack position straight overhead, keeping the core braced, lower with control." },
+  { id: uid(), name: "Kettlebell Reverse Lunge", muscle: "Legs", equipment: "Kettlebell", instructions: "Hold the bell at the chest or side, step back into a lunge, drive through the front heel to return to standing." },
+  { id: uid(), name: "Band Pull-Apart", muscle: "Shoulders", equipment: "Resistance Band", instructions: "Hold the band at shoulder height with arms extended, pull it apart by squeezing the shoulder blades together, control the return." },
+  { id: uid(), name: "Band Face Pull", muscle: "Shoulders", equipment: "Resistance Band", instructions: "Anchor the band at face height, pull toward the face flaring the elbows out, squeeze the rear delts." },
+  { id: uid(), name: "Banded Squat", muscle: "Legs", equipment: "Resistance Band", instructions: "Band anchored low behind you or under the feet, squat down against the resistance, drive up through the heels." },
+  { id: uid(), name: "Band Bicep Curl", muscle: "Arms", equipment: "Resistance Band", instructions: "Stand on the band, curl the handles up keeping the elbows pinned at the sides, lower with control." },
+  { id: uid(), name: "Band Tricep Pushdown", muscle: "Arms", equipment: "Resistance Band", instructions: "Anchor the band overhead, push the handles down extending the elbows fully, control the return." },
+  { id: uid(), name: "Band Deadlift", muscle: "Legs", equipment: "Resistance Band", instructions: "Stand on the band with feet shoulder-width, hinge down to grip the handles, drive the hips forward to stand." },
+  { id: uid(), name: "Band Row", muscle: "Back", equipment: "Resistance Band", instructions: "Anchor the band in front of you, pull the handles to the ribs squeezing the shoulder blades together." },
+  { id: uid(), name: "Band Chest Press", muscle: "Chest", equipment: "Resistance Band", instructions: "Anchor the band behind you, press the handles forward at chest height, control the return." },
+  { id: uid(), name: "Band Overhead Press", muscle: "Shoulders", equipment: "Resistance Band", instructions: "Stand on the band, press the handles straight overhead, lower with control." },
+  { id: uid(), name: "Band Woodchop", muscle: "Core", equipment: "Resistance Band", instructions: "Anchor the band to the side, pull it diagonally across the body rotating the torso, control the return." },
+  { id: uid(), name: "Band-Assisted Pull-Up", muscle: "Back", equipment: "Power Band", instructions: "Loop a heavy power band over the bar and under a knee or foot, use it to assist through the hardest part of the pull-up." },
+  { id: uid(), name: "Band-Resisted Push-Up", muscle: "Chest", equipment: "Power Band", instructions: "Loop the band across the upper back and under the hands, press up against the added resistance." },
+  { id: uid(), name: "Band Good Morning", muscle: "Legs", equipment: "Power Band", instructions: "Stand on the band with it looped over the shoulders, hinge forward at the hips keeping a flat back, return to standing." },
+  { id: uid(), name: "Band Hip Thrust", muscle: "Glutes", equipment: "Power Band", instructions: "Loop the band across the hips and anchor it under the feet, drive the hips up against the resistance, squeeze at the top." },
+  { id: uid(), name: "Band Shoulder Dislocate", muscle: "Shoulders", equipment: "Power Band", instructions: "Hold the band wide with both hands, raise it overhead and behind the back keeping the arms straight, reverse the motion." },
+  { id: uid(), name: "Band-Resisted Sprint Start", muscle: "Full Body", equipment: "Power Band", instructions: "Band anchored behind you around the waist, drive forward into a sprint start against the resistance for a few steps." },
+  { id: uid(), name: "Single-Arm Dumbbell Snatch", muscle: "Full Body", equipment: "Dumbbell", instructions: "Swing the dumbbell between the legs then explosively pull it overhead to lockout in one motion, alternate arms." },
+  { id: uid(), name: "Single-Arm Dumbbell Clean", muscle: "Full Body", equipment: "Dumbbell", instructions: "Pull the dumbbell from the floor to the shoulder in one explosive motion, alternate arms each set." },
+  { id: uid(), name: "Single-Arm Overhead Carry", muscle: "Core", equipment: "Dumbbell", instructions: "Press one dumbbell overhead and walk a set distance while keeping the arm locked and the torso stable." },
+  { id: uid(), name: "Single-Arm Floor Press", muscle: "Chest", equipment: "Dumbbell", instructions: "Lying on the floor, press one dumbbell straight up from chest level, keeping the non-working side braced." },
+  { id: uid(), name: "Single-Arm Dumbbell Row", muscle: "Back", equipment: "Dumbbell", instructions: "One hand and knee on a bench, row the dumbbell to the hip keeping the elbow close, lower with control." },
+  { id: uid(), name: "Single-Arm Dumbbell Swing", muscle: "Full Body", equipment: "Dumbbell", instructions: "Hinge at the hips and swing one dumbbell between the legs and up to chest height, alternate arms as prescribed." },
+  { id: uid(), name: "Single-Arm Thruster", muscle: "Full Body", equipment: "Dumbbell", instructions: "Hold one dumbbell at the shoulder, squat down then drive up explosively pressing it overhead." },
+  { id: uid(), name: "Suitcase Carry", muscle: "Core", equipment: "Dumbbell", instructions: "Hold one heavy dumbbell at your side and walk a set distance without letting the torso lean, switch sides." },
+  { id: uid(), name: "Box Jump", muscle: "Legs", equipment: "Plyo Box", instructions: "Stand facing the box, swing the arms and jump onto it landing softly with bent knees, step back down." },
+  { id: uid(), name: "Depth Jump", muscle: "Legs", equipment: "Plyo Box", instructions: "Step off the box, land softly, and immediately explode upward into a vertical jump." },
+  { id: uid(), name: "Lateral Box Jump", muscle: "Legs", equipment: "Plyo Box", instructions: "Stand beside the box and jump sideways onto it, landing softly, step down and repeat facing the other direction." },
+  { id: uid(), name: "Box Jump-Over", muscle: "Legs", equipment: "Plyo Box", instructions: "Jump onto the box then immediately jump off the other side, landing softly and resetting for the next rep." },
+  { id: uid(), name: "Single-Leg Box Step-Up", muscle: "Legs", equipment: "Plyo Box", instructions: "Step up onto the box with one leg, driving through the heel, step back down with control." },
+  { id: uid(), name: "Box Pike Push-Up", muscle: "Shoulders", equipment: "Plyo Box", instructions: "Feet elevated on the box in a pike position, lower the head toward the floor bending at the shoulders, press back up." },
+  { id: uid(), name: "Box Dip", muscle: "Arms", equipment: "Plyo Box", instructions: "Hands on the edge of the box behind you, lower the hips down bending the elbows, press back up." },
+  { id: uid(), name: "Box Plyo Push-Up", muscle: "Chest", equipment: "Plyo Box", instructions: "Hands on the box, lower into a push-up then push explosively so the hands leave the box, land softly and repeat." },
+  { id: uid(), name: "Smith Machine Squat", muscle: "Legs", equipment: "Smith Machine", instructions: "Bar on the upper traps, squat down to at least parallel keeping the torso upright, drive back up." },
+  { id: uid(), name: "Smith Machine Bench Press", muscle: "Chest", equipment: "Smith Machine", instructions: "Lie on a bench under the bar, lower it to the chest, press back up along the fixed track." },
+  { id: uid(), name: "Smith Machine Shoulder Press", muscle: "Shoulders", equipment: "Smith Machine", instructions: "Bar at shoulder height, press it straight overhead, lower with control." },
+  { id: uid(), name: "Smith Machine Inverted Row", muscle: "Back", equipment: "Smith Machine", instructions: "Set the bar at waist height, hang underneath it and row your chest up to the bar, lower with control." },
+  { id: uid(), name: "Smith Machine Lunge", muscle: "Legs", equipment: "Smith Machine", instructions: "Bar on the upper back, step into a lunge position and drive through the front heel to stand." },
+  { id: uid(), name: "Smith Machine Romanian Deadlift", muscle: "Legs", equipment: "Smith Machine", instructions: "Bar at hip height, hinge forward keeping a flat back, feel the hamstring stretch, drive hips forward to stand." },
+  { id: uid(), name: "Smith Machine Calf Raise", muscle: "Legs", equipment: "Smith Machine", instructions: "Balls of the feet on a small platform under the bar, rise onto the toes, lower for a full stretch." },
+  { id: uid(), name: "Smith Machine Hip Thrust", muscle: "Glutes", equipment: "Smith Machine", instructions: "Upper back against a bench under the bar, drive the hips up squeezing the glutes at the top." },
+  { id: uid(), name: "Plate Squat to Press", muscle: "Full Body", equipment: "Weight Plate", instructions: "Hold a plate at the chest, squat down, then stand and press the plate overhead." },
+  { id: uid(), name: "Plate Russian Twist", muscle: "Core", equipment: "Weight Plate", instructions: "Seated holding the plate, rotate side to side keeping the movement controlled." },
+  { id: uid(), name: "Plate Front Raise", muscle: "Shoulders", equipment: "Weight Plate", instructions: "Hold the plate with both hands, raise it straight in front to shoulder height, lower with control." },
+  { id: uid(), name: "Plate Halo", muscle: "Shoulders", equipment: "Weight Plate", instructions: "Circle the plate around the head keeping the core braced, alternate direction each set." },
+  { id: uid(), name: "Plate Overhead Carry", muscle: "Core", equipment: "Weight Plate", instructions: "Press the plate overhead with both hands and walk a set distance keeping the arms locked out." },
+  { id: uid(), name: "Plate Pinch Hold", muscle: "Arms", equipment: "Weight Plate", instructions: "Pinch a plate between the fingers and thumb and hold for time to build grip strength." },
+  { id: uid(), name: "Sled Drag (Forward)", muscle: "Legs", equipment: "Sled", instructions: "Attach a harness or rope to the sled, walk forward driving through the legs to pull it across the floor." },
+  { id: uid(), name: "Sled Drag (Backward)", muscle: "Legs", equipment: "Sled", instructions: "Face the sled and walk backward pulling it toward you, keeping the steps controlled." },
+  { id: uid(), name: "Sled Row Pull", muscle: "Back", equipment: "Sled", instructions: "Facing the sled, pull the rope hand over hand walking backward, rowing the sled toward you." },
+  { id: uid(), name: "Sled Lateral Drag", muscle: "Legs", equipment: "Sled", instructions: "Attach the sled to your side and walk laterally, dragging it across the floor with controlled steps." },
+  { id: uid(), name: "Sled Sprint Push", muscle: "Full Body", equipment: "Sled", instructions: "Hands on the sled handles, drive through the legs pushing the sled forward as fast as possible for a short distance." },
 ];
 
 const MUSCLES = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.muscle)))];
 const EQUIPMENT = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.equipment)))];
+
+const TEMPLATE_PROGRAMS = [
+  {
+    id: "tpl-beginner-4wk",
+    name: "Beginner Weight Loss — 4 Week Kickstart",
+    level: "Beginner",
+    description: "3 full-body days per week using approachable equipment, with a short cardio finisher each day. Great for someone new to structured training.",
+    days: [
+      {
+        name: "Day A — Full Body",
+        exercises: [
+          { exerciseName: "Goblet Squat", sets: 3, reps: "12-15" },
+          { exerciseName: "Incline Dumbbell Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "12-15" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 2, reps: "10-12" },
+          { exerciseName: "Plank", sets: 3, reps: "30-45 sec" },
+          { exerciseName: "Jump Rope", sets: 1, reps: "5 min" },
+        ],
+      },
+      {
+        name: "Day B — Full Body",
+        exercises: [
+          { exerciseName: "Leg Press", sets: 3, reps: "12-15" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Push-Up", sets: 3, reps: "8-12" },
+          { exerciseName: "Lateral Raise", sets: 2, reps: "12-15" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20 total" },
+          { exerciseName: "Rowing Machine", sets: 1, reps: "5 min" },
+        ],
+      },
+      {
+        name: "Day C — Full Body",
+        exercises: [
+          { exerciseName: "Walking Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Inverted Row", sets: 3, reps: "8-12" },
+          { exerciseName: "Machine Chest Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Face Pull", sets: 2, reps: "15" },
+          { exerciseName: "Dead Bug", sets: 3, reps: "10 per side" },
+          { exerciseName: "Assault Bike", sets: 1, reps: "5 min" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-alllevels-4wk",
+    name: "All-Levels Weight Loss Program",
+    level: "All levels",
+    description: "4 days per week combining compound strength work with conditioning finishers. Scales up or down easily based on the weight a client uses.",
+    days: [
+      {
+        name: "Day 1 — Lower + Core",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "8-10" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "10-12" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Hanging Knee Raise", sets: 3, reps: "10-15" },
+          { exerciseName: "Kettlebell Swing", sets: 3, reps: "15-20" },
+        ],
+      },
+      {
+        name: "Day 2 — Upper Push/Pull",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "8-10" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "8-10" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Tricep Pushdown", sets: 2, reps: "12-15" },
+          { exerciseName: "Face Pull", sets: 2, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Conditioning",
+        exercises: [
+          { exerciseName: "Kettlebell Clean and Press", sets: 4, reps: "8 per side" },
+          { exerciseName: "Battle Ropes", sets: 4, reps: "30 sec" },
+          { exerciseName: "Assault Bike", sets: 4, reps: "1 min hard / 1 min easy" },
+          { exerciseName: "Mountain Climber", sets: 3, reps: "30 sec" },
+          { exerciseName: "Plank", sets: 3, reps: "45 sec" },
+        ],
+      },
+      {
+        name: "Day 4 — Full Body",
+        exercises: [
+          { exerciseName: "Sumo Deadlift", sets: 4, reps: "6-8" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "10-12" },
+          { exerciseName: "Push-Up", sets: 3, reps: "10-15" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20 total" },
+          { exerciseName: "Treadmill Intervals", sets: 1, reps: "10 min" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-muscle-upperlower",
+    name: "Muscle Building — Upper/Lower Split",
+    level: "Intermediate",
+    description: "4 days per week alternating upper and lower body, with hypertrophy rep ranges to build size and strength.",
+    days: [
+      {
+        name: "Upper A",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "8-12" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "8-12" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Dumbbell Fly", sets: 2, reps: "12-15" },
+          { exerciseName: "Tricep Pushdown", sets: 3, reps: "12-15" },
+          { exerciseName: "Barbell Curl", sets: 3, reps: "10-12" },
+        ],
+      },
+      {
+        name: "Lower A",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "8-10" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "10-12" },
+          { exerciseName: "Leg Press", sets: 3, reps: "12-15" },
+          { exerciseName: "Seated Leg Curl", sets: 3, reps: "12-15" },
+          { exerciseName: "Standing Calf Raise", sets: 4, reps: "15-20" },
+        ],
+      },
+      {
+        name: "Upper B",
+        exercises: [
+          { exerciseName: "Incline Dumbbell Press", sets: 4, reps: "8-12" },
+          { exerciseName: "Seated Cable Row", sets: 4, reps: "10-12" },
+          { exerciseName: "Arnold Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Wide-Grip Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Cable Fly", sets: 2, reps: "12-15" },
+          { exerciseName: "Skull Crusher", sets: 3, reps: "10-12" },
+          { exerciseName: "Hammer Curl", sets: 3, reps: "10-12" },
+        ],
+      },
+      {
+        name: "Lower B",
+        exercises: [
+          { exerciseName: "Smith Machine Squat", sets: 4, reps: "8-10" },
+          { exerciseName: "Sumo Deadlift", sets: 3, reps: "8-10" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Leg Extension", sets: 3, reps: "12-15" },
+          { exerciseName: "Smith Machine Calf Raise", sets: 4, reps: "15-20" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-home-bands-dumbbells",
+    name: "Home Workout — Bands & Dumbbells Only",
+    level: "All levels",
+    description: "3 full-body days using only a resistance band, a kettlebell or dumbbell, and bodyweight — perfect for clients training at home.",
+    days: [
+      {
+        name: "Day A",
+        exercises: [
+          { exerciseName: "Goblet Squat", sets: 3, reps: "12-15" },
+          { exerciseName: "Band Row", sets: 3, reps: "15" },
+          { exerciseName: "Push-Up", sets: 3, reps: "8-15" },
+          { exerciseName: "Band Overhead Press", sets: 3, reps: "12-15" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20 total" },
+        ],
+      },
+      {
+        name: "Day B",
+        exercises: [
+          { exerciseName: "Kettlebell Deadlift", sets: 3, reps: "12-15" },
+          { exerciseName: "Single-Arm Dumbbell Row", sets: 3, reps: "10-12 per side" },
+          { exerciseName: "Band Chest Press", sets: 3, reps: "15" },
+          { exerciseName: "Band Bicep Curl", sets: 3, reps: "12-15" },
+          { exerciseName: "Plank", sets: 3, reps: "30-45 sec" },
+        ],
+      },
+      {
+        name: "Day C",
+        exercises: [
+          { exerciseName: "Kettlebell Swing", sets: 4, reps: "15-20" },
+          { exerciseName: "Single-Arm Thruster", sets: 3, reps: "10 per side" },
+          { exerciseName: "Band Face Pull", sets: 3, reps: "15" },
+          { exerciseName: "Band Tricep Pushdown", sets: 3, reps: "12-15" },
+          { exerciseName: "Dead Bug", sets: 3, reps: "10 per side" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-athletic-power",
+    name: "Athletic Power & Conditioning",
+    level: "Intermediate/Advanced",
+    description: "3 days combining explosive power work, heavy compound strength, and hard conditioning — best suited for clients with some training background.",
+    days: [
+      {
+        name: "Day 1 — Power",
+        exercises: [
+          { exerciseName: "Box Jump", sets: 4, reps: "5" },
+          { exerciseName: "Kettlebell Snatch", sets: 4, reps: "6 per side" },
+          { exerciseName: "Slam Ball Slam", sets: 4, reps: "10" },
+          { exerciseName: "Sled Sprint Push", sets: 4, reps: "20 yards" },
+          { exerciseName: "Plank", sets: 3, reps: "45 sec" },
+        ],
+      },
+      {
+        name: "Day 2 — Strength",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 5, reps: "5" },
+          { exerciseName: "Barbell Bench Press", sets: 5, reps: "5" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "6-8" },
+          { exerciseName: "Kettlebell Deadlift", sets: 3, reps: "10" },
+        ],
+      },
+      {
+        name: "Day 3 — Conditioning",
+        exercises: [
+          { exerciseName: "Battle Ropes", sets: 5, reps: "30 sec" },
+          { exerciseName: "Slam Ball Squat Throw", sets: 4, reps: "12" },
+          { exerciseName: "Sled Drag (Forward)", sets: 4, reps: "20 yards" },
+          { exerciseName: "Assault Bike", sets: 5, reps: "1 min hard / 1 min easy" },
+          { exerciseName: "Mountain Climber", sets: 3, reps: "30 sec" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-beginner-strength",
+    name: "Beginner Strength Foundations",
+    level: "Beginner",
+    description: "3 machine and Smith Machine based days for someone new to lifting who wants a safe, guided way to build foundational strength.",
+    days: [
+      {
+        name: "Day 1",
+        exercises: [
+          { exerciseName: "Smith Machine Squat", sets: 3, reps: "10-12" },
+          { exerciseName: "Machine Chest Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Leg Extension", sets: 2, reps: "12-15" },
+          { exerciseName: "Plank", sets: 3, reps: "20-30 sec" },
+        ],
+      },
+      {
+        name: "Day 2",
+        exercises: [
+          { exerciseName: "Smith Machine Romanian Deadlift", sets: 3, reps: "10-12" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "10-12" },
+          { exerciseName: "Machine Shoulder Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Seated Leg Curl", sets: 2, reps: "12-15" },
+          { exerciseName: "Dead Bug", sets: 3, reps: "8 per side" },
+        ],
+      },
+      {
+        name: "Day 3",
+        exercises: [
+          { exerciseName: "Leg Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Smith Machine Bench Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Wide-Grip Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Standing Calf Raise", sets: 3, reps: "15-20" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "16 total" },
+        ],
+      },
+    ],
+  },
+];
 
 const FONT_STACK = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
@@ -212,7 +731,7 @@ export default function App() {
   }, []);
 
   const loadClientData = async (clientId) => {
-    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
     setClientData(data);
   };
 
@@ -312,18 +831,20 @@ const pageBase = {
 
 // ============================================================
 function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
-  const [selected, setSelected] = useState(null);
+  const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
 
   const handleLogin = () => {
-    if (!selected) return;
-    if ((selected.pin || "") !== pin) {
-      setError("Incorrect PIN");
+    const match = clients.find(
+      (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase() && (c.pin || "") === pin
+    );
+    if (!match) {
+      setError("Name or PIN not recognized");
       return;
     }
     setError("");
-    onClientLogin(selected);
+    onClientLogin(match);
   };
 
   return (
@@ -331,8 +852,8 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 14, background: COLORS.accentDim, marginBottom: 14 }}>
-            <Dumbbell size={26} color={COLORS.accent} />
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 72, height: 72, borderRadius: 16, overflow: "hidden", marginBottom: 14 }}>
+            <img src="/logo-mark.png" alt="Xcel Online PT" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
           <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>
             Xcel Online PT
@@ -340,60 +861,31 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
           <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>Sign in to see your workouts</p>
         </div>
 
-        {!selected ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {clients.length === 0 && (
-              <Card style={{ textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
-                No clients set up yet. Your trainer needs to add you first.
-              </Card>
-            )}
-            {clients.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelected(c)}
-                style={{
-                  ...inputStyle,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  padding: "14px 14px",
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 999, background: COLORS.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <User size={16} color={COLORS.textMuted} />
-                </div>
-                <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15 }}>{c.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div>
-            <button onClick={() => { setSelected(null); setPin(""); setError(""); }} style={{ background: "none", border: "none", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer", fontSize: 13, padding: 0 }}>
-              <ChevronLeft size={16} /> Back
-            </button>
-            <Card>
-              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 14 }}>
-                Hey {selected.name.split(" ")[0]} 👋
-              </div>
-              <Field label="Enter your PIN">
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  style={inputStyle}
-                  placeholder="••••"
-                  autoFocus
-                />
-              </Field>
-              {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <Btn onClick={handleLogin} style={{ width: "100%" }}>Log in</Btn>
-            </Card>
-          </div>
-        )}
+        <Card>
+          <Field label="Your name">
+            <input
+              style={inputStyle}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              placeholder="Full name"
+              autoFocus
+            />
+          </Field>
+          <Field label="PIN">
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              style={inputStyle}
+              placeholder="••••"
+            />
+          </Field>
+          {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          <Btn onClick={handleLogin} style={{ width: "100%" }}>Log in</Btn>
+        </Card>
 
         <div style={{ textAlign: "center", marginTop: 28 }}>
           <button onClick={onTrainerClick} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -461,7 +953,9 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   const tabs = [
     { id: "clients", label: "Clients", icon: User },
     { id: "library", label: "Library", icon: Dumbbell },
+    { id: "templates", label: "Templates", icon: Layers },
     { id: "programs", label: "Programs", icon: CalendarDays },
+    { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
 
@@ -504,7 +998,9 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
       <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
         {tab === "clients" && <ClientsTab clients={clients} onRefresh={onRefreshClients} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
+        {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
+        {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
       </div>
     </div>
@@ -580,9 +1076,55 @@ function ClientsTab({ clients, onRefresh }) {
                 </div>
               </div>
             )}
+            <IntakeViewer clientId={c.id} />
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IntakeViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [intake, setIntake] = useState(null);
+  const [latestStats, setLatestStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (!open && intake === null) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setIntake(data.intake || false);
+      const stats = (data.bodyStats || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+      setLatestStats(stats[stats.length - 1] || null);
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  const bmi = latestStats && intake?.heightIn ? computeBMI(latestStats.weight, intake.heightIn) : null;
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide intake info" : "View intake info"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        !intake ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>This client hasn't filled out their intake form yet.</div> :
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.6 }}>
+          <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${Math.floor(intake.heightIn / 12)}'${intake.heightIn % 12}"` : "—"} / {intake.gender || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
+          {latestStats && (
+            <div style={{ marginTop: 6 }}>
+              <strong style={{ color: COLORS.text }}>Latest stats ({fmtDate(latestStats.date)}):</strong> {latestStats.weight} lbs{latestStats.bodyFat != null ? `, ${latestStats.bodyFat}% BF` : ""}{bmi ? `, BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})` : ""}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -608,7 +1150,7 @@ function EditClientRow({ client, onSave, onCancel }) {
 
 function LibraryTab({ exercises, onRefresh }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "" });
+  const [form, setForm] = useState({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "", videoUrl: "" });
   const [muscleFilter, setMuscleFilter] = useState("All");
   const [query, setQuery] = useState("");
 
@@ -617,7 +1159,7 @@ function LibraryTab({ exercises, onRefresh }) {
     const list = await sGet("app:exercises", []);
     list.push({ id: uid(), ...form, name: form.name.trim() });
     await sSet("app:exercises", list);
-    setForm({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "" });
+    setForm({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "", videoUrl: "" });
     setAdding(false);
     onRefresh();
   };
@@ -659,6 +1201,9 @@ function LibraryTab({ exercises, onRefresh }) {
           <Field label="Instructions">
             <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
           </Field>
+          <Field label="Video URL (optional, YouTube link)">
+            <input style={inputStyle} placeholder="https://youtube.com/watch?v=..." value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} />
+          </Field>
           <Btn onClick={addExercise}>Save exercise</Btn>
         </Card>
       )}
@@ -679,9 +1224,195 @@ function LibraryTab({ exercises, onRefresh }) {
             </div>
             <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 4 }}>{e.muscle} · {e.equipment}</div>
             <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.5 }}>{e.instructions}</div>
+            <VideoLinkEditor exercise={e} onSaved={onRefresh} />
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function VideoLinkEditor({ exercise, onSaved }) {
+  const [url, setUrl] = useState(exercise.videoUrl || "");
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    const list = await sGet("app:exercises", []);
+    const next = list.map((ex) => (ex.id === exercise.id ? { ...ex, videoUrl: url.trim() } : ex));
+    await sSet("app:exercises", next);
+    setSaved(true);
+    onSaved();
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+      <input
+        style={{ ...inputStyle, fontSize: 12, padding: "6px 10px" }}
+        placeholder="Paste a YouTube link…"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+      />
+      <Btn variant="subtle" style={{ padding: "6px 12px", fontSize: 12 }} onClick={save}>{saved ? <Check size={13} /> : "Save"}</Btn>
+    </div>
+  );
+}
+
+function TemplatesTab({ clients, exercises }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const [assignTarget, setAssignTarget] = useState({}); // templateId -> clientId
+  const [confirming, setConfirming] = useState(null); // templateId awaiting confirm
+  const [status, setStatus] = useState({}); // templateId -> "done" | "missing:name1,name2"
+
+  const resolveDays = (template) => {
+    const missing = [];
+    const days = template.days.map((day) => ({
+      id: uid(),
+      name: day.name,
+      exercises: day.exercises.map((ex) => {
+        const found = exercises.find((e) => e.name.toLowerCase() === ex.exerciseName.toLowerCase());
+        if (!found) missing.push(ex.exerciseName);
+        return { id: uid(), exerciseId: found?.id || null, sets: ex.sets, reps: ex.reps, notes: "" };
+      }).filter((ex) => ex.exerciseId),
+    }));
+    return { days, missing };
+  };
+
+  const assign = async (template) => {
+    const clientId = assignTarget[template.id];
+    if (!clientId) return;
+    const { days, missing } = resolveDays(template);
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
+    await sSet(`client:${clientId}`, { ...data, program: { days } });
+    setStatus({ ...status, [template.id]: missing.length ? `Assigned — couldn't find: ${missing.join(", ")}` : "Assigned successfully" });
+    setConfirming(null);
+    setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 4000);
+  };
+
+  if (clients.length === 0) {
+    return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign them a program.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Program templates</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Assigning a template replaces that client's current program.</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {TEMPLATE_PROGRAMS.map((t) => (
+          <Card key={t.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
+              </div>
+              <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                {expandedId === t.id ? "Hide" : "Preview"}
+              </button>
+            </div>
+
+            {expandedId === t.id && (
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                {t.days.map((day, i) => (
+                  <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{day.name}</div>
+                    {day.exercises.map((ex, j) => (
+                      <div key={j} style={{ fontSize: 11, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                        <span>{ex.exerciseName}</span>
+                        <span>{ex.sets} × {ex.reps}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                style={{ ...inputStyle, maxWidth: 200 }}
+                value={assignTarget[t.id] || ""}
+                onChange={(e) => setAssignTarget({ ...assignTarget, [t.id]: e.target.value })}
+              >
+                <option value="">Choose a client…</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {confirming === t.id ? (
+                <>
+                  <span style={{ fontSize: 11, color: COLORS.danger }}>Replace their current program?</span>
+                  <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assign(t)}>Yes, assign</Btn>
+                  <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(null)}>Cancel</Btn>
+                </>
+              ) : (
+                <Btn
+                  style={{ padding: "8px 12px", fontSize: 12 }}
+                  disabled={!assignTarget[t.id]}
+                  onClick={() => setConfirming(t.id)}
+                >
+                  Assign to client
+                </Btn>
+              )}
+            </div>
+            {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Assigned success") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NutritionTargetsTab({ clients }) {
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [targets, setTargets] = useState({ calories: "", protein: "", carbs: "", fat: "" });
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    (async () => {
+      setLoading(true);
+      const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
+      setTargets(data.nutrition?.targets || { calories: "", protein: "", carbs: "", fat: "" });
+      setLoading(false);
+    })();
+  }, [selectedClientId]);
+
+  const save = async () => {
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
+    const nutrition = { ...(data.nutrition || {}), targets };
+    await sSet(`client:${selectedClientId}`, { ...data, nutrition });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first to set their nutrition goals.</div>;
+
+  return (
+    <div>
+      <select style={{ ...inputStyle, maxWidth: 260, marginBottom: 16 }} value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
+        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {loading ? <div style={{ color: COLORS.textMuted }}>Loading…</div> : (
+        <Card>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 14 }}>Daily targets</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 12 }}>
+            <Field label="Calories">
+              <input type="number" style={inputStyle} value={targets.calories} onChange={(e) => setTargets({ ...targets, calories: e.target.value })} />
+            </Field>
+            <Field label="Protein (g)">
+              <input type="number" style={inputStyle} value={targets.protein} onChange={(e) => setTargets({ ...targets, protein: e.target.value })} />
+            </Field>
+            <Field label="Carbs (g)">
+              <input type="number" style={inputStyle} value={targets.carbs} onChange={(e) => setTargets({ ...targets, carbs: e.target.value })} />
+            </Field>
+            <Field label="Fat (g)">
+              <input type="number" style={inputStyle} value={targets.fat} onChange={(e) => setTargets({ ...targets, fat: e.target.value })} />
+            </Field>
+          </div>
+          <Btn onClick={save} style={{ marginTop: 6 }}>{saved ? <Check size={15} /> : "Save targets"}</Btn>
+        </Card>
+      )}
     </div>
   );
 }
@@ -834,32 +1565,129 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
+function IntakeForm({ data, onSave, onClose }) {
+  const existing = data.intake || {};
+  const existingTotalIn = Number(existing.heightIn) || 0;
+  const [form, setForm] = useState({
+    goal: existing.goal || "",
+    experience: existing.experience || "Beginner",
+    equipment: existing.equipment || "",
+    injuries: existing.injuries || "",
+    age: existing.age || "",
+    heightFt: existingTotalIn ? Math.floor(existingTotalIn / 12) : "",
+    heightInRem: existingTotalIn ? existingTotalIn % 12 : "",
+    gender: existing.gender || "Prefer not to say",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const heightIn = (Number(form.heightFt) || 0) * 12 + (Number(form.heightInRem) || 0);
+    const { heightFt, heightInRem, ...rest } = form;
+    await onSave({ ...data, intake: { ...rest, heightIn: heightIn || "", submittedAt: new Date().toISOString() } });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}>
+      <div style={{ background: COLORS.bg, borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", border: `1px solid ${COLORS.border}`, borderBottom: "none" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Tell us about you</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 18 }}>This helps your trainer build the right program for you.</div>
+
+        <Field label="What's your main goal?">
+          <input style={inputStyle} placeholder="e.g. lose weight, build strength, tone up" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} />
+        </Field>
+        <Field label="Training experience">
+          <select style={inputStyle} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })}>
+            <option>Beginner</option>
+            <option>Intermediate</option>
+            <option>Advanced</option>
+          </select>
+        </Field>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
+          <Field label="Age">
+            <input type="number" style={inputStyle} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
+          </Field>
+          <Field label="Gender">
+            <select style={inputStyle} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <option>Male</option>
+              <option>Female</option>
+              <option>Prefer not to say</option>
+            </select>
+          </Field>
+          <Field label="Height — feet">
+            <input type="number" style={inputStyle} placeholder="5" value={form.heightFt} onChange={(e) => setForm({ ...form, heightFt: e.target.value })} />
+          </Field>
+          <Field label="Height — inches">
+            <input type="number" style={inputStyle} placeholder="8" value={form.heightInRem} onChange={(e) => setForm({ ...form, heightInRem: e.target.value })} />
+          </Field>
+        </div>
+
+        <Field label="What equipment do you have access to?">
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. full gym, home dumbbells only, bodyweight only" value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} />
+        </Field>
+        <Field label="Any injuries or limitations we should know about?">
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. lower back sensitivity, knee issue — or 'none'" value={form.injuries} onChange={(e) => setForm({ ...form, injuries: e.target.value })} />
+        </Field>
+
+        <Btn onClick={save} disabled={saving} style={{ width: "100%", marginTop: 4 }}>{saving ? "Saving…" : "Save"}</Btn>
+      </div>
+    </div>
+  );
+}
+
 function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [tab, setTab] = useState("today");
+  const [showIntake, setShowIntake] = useState(false);
+  const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
     { id: "library", label: "Library", icon: Dumbbell },
+    { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
+
+  useEffect(() => {
+    if (!data.intake && !autoPromptShown) {
+      setShowIntake(true);
+      setAutoPromptShown(true);
+    }
+  }, [data.intake, autoPromptShown]);
 
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
       <style>{FONT_STACK}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
-        <div>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+          </div>
         </div>
-        <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
+        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <button onClick={() => setShowIntake(true)} title="Edit your profile" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><FileText size={18} /></button>
+          <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
-        {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
-        {tab === "messages" && <ClientMessages data={data} onSave={onSave} />}
+        {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
+        {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
+        {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
       </div>
+
+      {showIntake && (
+        <IntakeForm data={data} onSave={onSave} onClose={() => setShowIntake(false)} />
+      )}
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
         {tabs.map((t) => (
@@ -890,22 +1718,180 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   );
 }
 
+function FreeformWorkoutForm({ exercises, onSave, onCancel }) {
+  const [date, setDate] = useState(todayISO());
+  const [items, setItems] = useState([]);
+  const [pickId, setPickId] = useState("");
+
+  const grouped = useMemo(() => {
+    const byGroup = {};
+    exercises.forEach((e) => {
+      const g = e.muscle || "Other";
+      (byGroup[g] = byGroup[g] || []).push(e);
+    });
+    return byGroup;
+  }, [exercises]);
+
+  const addExercise = () => {
+    if (!pickId || items.some((it) => it.exerciseId === pickId)) { setPickId(""); return; }
+    setItems([...items, { id: uid(), exerciseId: pickId, sets: [{ reps: "", weight: "" }] }]);
+    setPickId("");
+  };
+
+  const removeExercise = (id) => setItems(items.filter((it) => it.id !== id));
+  const addSet = (id) => setItems(items.map((it) => (it.id === id ? { ...it, sets: [...it.sets, { reps: "", weight: "" }] } : it)));
+  const removeSet = (id, idx) => setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.filter((_, i) => i !== idx) } : it)));
+  const updateSet = (id, idx, field, value) =>
+    setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.map((s, i) => (i === idx ? { ...s, [field]: value } : s)) } : it)));
+
+  const canSave = !!date && items.length > 0;
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onSave({
+      id: uid(),
+      date,
+      freeform: true,
+      dayName: "Custom workout",
+      entries: items.map((it) => ({ exerciseId: it.exerciseId, sets: it.sets })),
+    });
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>Log a workout on your own</div>
+
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+
+      <Field label="Add an exercise">
+        <div style={{ display: "flex", gap: 8 }}>
+          <select style={{ ...inputStyle, flex: 1 }} value={pickId} onChange={(e) => setPickId(e.target.value)}>
+            <option value="">Choose from library…</option>
+            {Object.entries(grouped).map(([group, list]) => (
+              <optgroup key={group} label={group}>
+                {list.map((ex) => (
+                  <option key={ex.id} value={ex.id}>{ex.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <Btn variant="subtle" onClick={addExercise}><Plus size={15} /> Add</Btn>
+        </div>
+      </Field>
+
+      {items.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 14 }}>
+          {items.map((it) => {
+            const exDef = exercises.find((e) => e.id === it.exerciseId);
+            return (
+              <div key={it.id} style={{ border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{exDef?.name || "Exercise"}</div>
+                  <button onClick={() => removeExercise(it.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                  {it.sets.map((s, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                      <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(it.id, i, "reps", e.target.value)} />
+                      <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(it.id, i, "weight", e.target.value)} />
+                      {it.sets.length > 1 && (
+                        <button onClick={() => removeSet(it.id, i)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => addSet(it.id)} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, cursor: "pointer", padding: 0 }}>
+                  + Add set
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={handleSave} disabled={!canSave} style={{ flex: 1 }}><Check size={16} /> Save workout</Btn>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </Card>
+  );
+}
+
+function FreeformHistory({ logs, exercises, onDelete }) {
+  const items = useMemo(
+    () => [...logs].filter((l) => l.freeform).sort((a, b) => b.date.localeCompare(a.date)),
+    [logs]
+  );
+  if (items.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13, color: COLORS.textMuted, marginBottom: 8 }}>
+        Your logged workouts
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map((l) => (
+          <Card key={l.id} style={{ padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(l.date)}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  {l.entries.map((e) => exercises.find((ex) => ex.id === e.exerciseId)?.name || "Exercise").join(", ")}
+                </div>
+              </div>
+              <button onClick={() => onDelete(l.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TodayTab({ data, exercises, onSave }) {
   const days = data.program?.days || [];
   const [dayIdx, setDayIdx] = useState(0);
   const day = days[dayIdx];
   const todayLog = useMemo(() => data.logs.find((l) => l.date === todayISO() && l.dayId === day?.id), [data.logs, day]);
   const [entries, setEntries] = useState(() => todayLog?.entries || []);
+  const [showFreeform, setShowFreeform] = useState(false);
 
   useEffect(() => {
     setEntries(todayLog?.entries || []);
   }, [dayIdx, todayLog]);
 
+  const saveFreeform = async (log) => {
+    await onSave({ ...data, logs: [...data.logs, log] });
+    setShowFreeform(false);
+  };
+
+  const deleteFreeform = async (id) => {
+    await onSave({ ...data, logs: data.logs.filter((l) => l.id !== id) });
+  };
+
   if (days.length === 0) {
     return (
-      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
-        Your trainer hasn't assigned a program yet. Check back soon, or see a note in Messages.
-      </Card>
+      <div>
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
+          Your trainer hasn't assigned a program yet. Check back soon, or see a note in Messages.
+        </Card>
+        {showFreeform ? (
+          <FreeformWorkoutForm exercises={exercises} onSave={saveFreeform} onCancel={() => setShowFreeform(false)} />
+        ) : (
+          <Btn variant="subtle" onClick={() => setShowFreeform(true)} style={{ width: "100%", marginBottom: 16 }}>
+            <Plus size={16} /> Log a workout on your own
+          </Btn>
+        )}
+        <FreeformHistory logs={data.logs} exercises={exercises} onDelete={deleteFreeform} />
+      </div>
     );
   }
 
@@ -952,7 +1938,15 @@ function TodayTab({ data, exercises, onSave }) {
           return (
             <Card key={ex.id}>
               <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Target: {ex.sets} × {ex.reps}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+              <a
+                href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+              >
+                Watch example ↗
+              </a>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {sets.map((s, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -968,6 +1962,253 @@ function TodayTab({ data, exercises, onSave }) {
       </div>
 
       <Btn onClick={saveWorkout} style={{ width: "100%", marginTop: 16 }}><Check size={16} /> Save today's workout</Btn>
+
+      <div style={{ marginTop: 28, borderTop: `1px solid ${COLORS.border}`, paddingTop: 20 }}>
+        {showFreeform ? (
+          <FreeformWorkoutForm exercises={exercises} onSave={saveFreeform} onCancel={() => setShowFreeform(false)} />
+        ) : (
+          <Btn variant="subtle" onClick={() => setShowFreeform(true)} style={{ width: "100%", marginBottom: 16 }}>
+            <Plus size={16} /> Log a workout on your own
+          </Btn>
+        )}
+        <FreeformHistory logs={data.logs} exercises={exercises} onDelete={deleteFreeform} />
+      </div>
+    </div>
+  );
+}
+
+function ClientNutrition({ data, onSave }) {
+  const targets = data.nutrition?.targets || {};
+  const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
+  const todayLog = (data.nutrition?.logs || []).find((l) => l.date === todayISO());
+  const entries = todayLog?.entries || [];
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState(null); // food result awaiting a quantity
+  const [oz, setOz] = useState("4");
+  const [manual, setManual] = useState(null); // { name, calories, protein, carbs, fat }
+  const [mealPlan, setMealPlan] = useState(null);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const r = await searchFoods(query);
+      setResults(r);
+      setSearching(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const totals = entries.reduce((acc, e) => ({
+    calories: acc.calories + (e.calories || 0),
+    protein: acc.protein + (e.protein || 0),
+    carbs: acc.carbs + (e.carbs || 0),
+    fat: acc.fat + (e.fat || 0),
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+  const saveEntries = async (nextEntries) => {
+    const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
+    logs.push({ date: todayISO(), entries: nextEntries });
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const addFromSearch = async () => {
+    if (!picked) return;
+    const macros = macrosForOz(picked.per100g, oz);
+    const entry = { id: uid(), name: picked.name, oz: Number(oz) || 0, ...macros };
+    await saveEntries([...entries, entry]);
+    setPicked(null);
+    setQuery("");
+    setResults([]);
+    setOz("4");
+  };
+
+  const addManual = async () => {
+    if (!manual?.name?.trim()) return;
+    const entry = {
+      id: uid(),
+      name: manual.name.trim(),
+      oz: Number(manual.oz) || 0,
+      calories: Number(manual.calories) || 0,
+      protein: Number(manual.protein) || 0,
+      carbs: Number(manual.carbs) || 0,
+      fat: Number(manual.fat) || 0,
+    };
+    await saveEntries([...entries, entry]);
+    setManual(null);
+  };
+
+  const logMealPlan = async () => {
+    if (!mealPlan) return;
+    const newEntries = mealPlan.meals.map((m) => ({
+      id: uid(),
+      name: `${m.slot}: ${m.name}`,
+      oz: 0,
+      calories: m.calories,
+      protein: m.protein,
+      carbs: m.carbs,
+      fat: m.fat,
+    }));
+    await saveEntries([...entries, ...newEntries]);
+    setMealPlan(null);
+  };
+
+  const removeEntry = async (id) => {
+    await saveEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const Meter = ({ label, value, goal, unit }) => {
+    const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>
+          <span>{label}</span>
+          <span>{value}{unit} {goal ? `/ ${goal}${unit}` : ""}</span>
+        </div>
+        <div style={{ height: 6, background: COLORS.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: COLORS.accent, borderRadius: 4 }} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {!hasTargets ? (
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
+          Your trainer hasn't set your nutrition goals yet. Check back soon or ask in Messages.
+        </Card>
+      ) : (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Today's totals</div>
+          <Meter label="Calories" value={totals.calories} goal={Number(targets.calories) || 0} unit="" />
+          <Meter label="Protein" value={totals.protein} goal={Number(targets.protein) || 0} unit="g" />
+          <Meter label="Carbs" value={totals.carbs} goal={Number(targets.carbs) || 0} unit="g" />
+          <Meter label="Fat" value={totals.fat} goal={Number(targets.fat) || 0} unit="g" />
+        </Card>
+      )}
+
+      {hasTargets && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: mealPlan ? 12 : 0 }}>
+            <div>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14 }}>Example meal plan</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>Simple meal ideas sized to your daily goals — a reference, not exact tracking.</div>
+            </div>
+          </div>
+          <Btn variant={mealPlan ? "subtle" : "primary"} style={{ marginTop: 12 }} onClick={() => setMealPlan(generateMealPlan(targets))}>
+            {mealPlan ? "Shuffle meals" : "Generate example meals"}
+          </Btn>
+
+          {mealPlan && (
+            <div style={{ marginTop: 14 }}>
+              {mealPlan.meals.map((m, i) => (
+                <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 600 }}>{m.slot}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{m.name}</div>
+                  {m.ingredients && (
+                    <ul style={{ margin: "6px 0 0", paddingLeft: 16, fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>
+                      {m.ingredients.map((ing, j) => <li key={j}>{ing}</li>)}
+                    </ul>
+                  )}
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{m.calories} cal · {m.protein}g P · {m.carbs}g C · {m.fat}g F</div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, marginBottom: 12 }}>
+                Day total: {mealPlan.totals.calories} cal · {mealPlan.totals.protein}g P · {mealPlan.totals.carbs}g C · {mealPlan.totals.fat}g F (target: {targets.calories || "—"} cal)
+              </div>
+              <Btn onClick={logMealPlan}><Plus size={14} /> Log these to today</Btn>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
+        <input
+          style={{ ...inputStyle, paddingLeft: 34 }}
+          placeholder="Search a food (e.g. grilled chicken breast)…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
+        />
+      </div>
+
+      {searching && <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Searching…</div>}
+
+      {!picked && results.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {results.map((r) => (
+            <button
+              key={r.fdcId}
+              onClick={() => setPicked(r)}
+              style={{ ...inputStyle, textAlign: "left", cursor: "pointer", fontSize: 12 }}
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {picked && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>{picked.name}</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="number" style={{ ...inputStyle, width: 80 }} value={oz} onChange={(e) => setOz(e.target.value)} />
+            <span style={{ fontSize: 12, color: COLORS.textMuted }}>oz</span>
+            <Btn style={{ marginLeft: "auto" }} onClick={addFromSearch}><Plus size={14} /> Add</Btn>
+            <Btn variant="ghost" onClick={() => setPicked(null)}><X size={14} /></Btn>
+          </div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>
+            ≈ {macrosForOz(picked.per100g, oz).calories} cal · {macrosForOz(picked.per100g, oz).protein}g protein · {macrosForOz(picked.per100g, oz).carbs}g carbs · {macrosForOz(picked.per100g, oz).fat}g fat
+          </div>
+        </Card>
+      )}
+
+      {!manual ? (
+        <button
+          onClick={() => setManual({ name: "", oz: "", calories: "", protein: "", carbs: "", fat: "" })}
+          style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 16 }}
+        >
+          + Add manually instead
+        </button>
+      ) : (
+        <Card style={{ marginBottom: 16 }}>
+          <Field label="Food name">
+            <input style={inputStyle} value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
+            <Field label="Calories"><input type="number" style={inputStyle} value={manual.calories} onChange={(e) => setManual({ ...manual, calories: e.target.value })} /></Field>
+            <Field label="Protein (g)"><input type="number" style={inputStyle} value={manual.protein} onChange={(e) => setManual({ ...manual, protein: e.target.value })} /></Field>
+            <Field label="Carbs (g)"><input type="number" style={inputStyle} value={manual.carbs} onChange={(e) => setManual({ ...manual, carbs: e.target.value })} /></Field>
+            <Field label="Fat (g)"><input type="number" style={inputStyle} value={manual.fat} onChange={(e) => setManual({ ...manual, fat: e.target.value })} /></Field>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn onClick={addManual}>Add</Btn>
+            <Btn variant="ghost" onClick={() => setManual(null)}>Cancel</Btn>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Today's food</div>
+      {entries.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 12 }}>Nothing logged yet today.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {entries.map((e) => (
+          <Card key={e.id} style={{ padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{e.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  {e.oz ? `${e.oz} oz · ` : ""}{e.calories} cal · {e.protein}g P · {e.carbs}g C · {e.fat}g F
+                </div>
+              </div>
+              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1007,7 +2248,34 @@ function ClientLibrary({ exercises }) {
               <div style={{ fontSize: 11, color: COLORS.accent }}>{e.muscle}</div>
             </div>
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{e.equipment}</div>
-            {expanded === e.id && <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>}
+            {expanded === e.id && (
+              <div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
+                {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
+                  <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden" }}>
+                    <iframe
+                      width="100%"
+                      height="200"
+                      src={toYouTubeEmbed(e.videoUrl)}
+                      title={e.name}
+                      style={{ border: "none" }}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <a
+                    href={exerciseSearchUrl(e.name)}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
+                  >
+                    Watch an example ↗
+                  </a>
+                )}
+              </div>
+            )}
           </Card>
         ))}
         {filtered.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>}
@@ -1016,14 +2284,20 @@ function ClientLibrary({ exercises }) {
   );
 }
 
-function ProgressTab({ data, exercises }) {
+function ProgressTab({ data, exercises, clientId, onSave }) {
   const exIdsLogged = useMemo(() => {
     const ids = new Set();
-    data.logs.forEach((l) => l.entries.forEach((e) => {
-      const day = (data.program.days || []).find((d) => d.id === l.dayId);
-      const dayEx = day?.exercises.find((de) => de.id === e.dayExId);
-      if (dayEx) ids.add(dayEx.exerciseId);
-    }));
+    data.logs.forEach((l) => {
+      if (l.freeform) {
+        l.entries.forEach((e) => e.exerciseId && ids.add(e.exerciseId));
+        return;
+      }
+      l.entries.forEach((e) => {
+        const day = (data.program.days || []).find((d) => d.id === l.dayId);
+        const dayEx = day?.exercises.find((de) => de.id === e.dayExId);
+        if (dayEx) ids.add(dayEx.exerciseId);
+      });
+    });
     return Array.from(ids);
   }, [data]);
 
@@ -1037,6 +2311,13 @@ function ProgressTab({ data, exercises }) {
     if (!selectedExId) return [];
     const points = [];
     data.logs.forEach((l) => {
+      if (l.freeform) {
+        const entry = l.entries.find((e) => e.exerciseId === selectedExId);
+        if (!entry) return;
+        const maxWeight = Math.max(0, ...entry.sets.map((s) => Number(s.weight) || 0));
+        if (maxWeight > 0) points.push({ date: fmtDate(l.date), weight: maxWeight, raw: l.date });
+        return;
+      }
       const day = (data.program.days || []).find((d) => d.id === l.dayId);
       const dayEx = day?.exercises.find((de) => de.exerciseId === selectedExId);
       if (!dayEx) return;
@@ -1048,41 +2329,195 @@ function ProgressTab({ data, exercises }) {
     return points.sort((a, b) => a.raw.localeCompare(b.raw));
   }, [data, selectedExId]);
 
-  if (exIdsLogged.length === 0) {
-    return <Card style={{ textAlign: "center", color: COLORS.textMuted }}>Log a few workouts on the Today tab and your progress will show up here.</Card>;
-  }
-
   const exName = (id) => exercises.find((e) => e.id === id)?.name || "Exercise";
+  const consistency = computeConsistency(data.logs);
 
   return (
     <div>
-      <select style={{ ...inputStyle, marginBottom: 18 }} value={selectedExId} onChange={(e) => setSelectedExId(e.target.value)}>
-        {exIdsLogged.map((id) => <option key={id} value={id}>{exName(id)}</option>)}
-      </select>
-
-      <Card>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Top set weight over time</div>
-        {chartData.length < 2 ? (
-          <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Log at least 2 sessions with weight to see a trend line.</div>
-        ) : (
-          <div style={{ width: "100%", height: 220 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
-                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={11} />
-                <YAxis stroke={COLORS.textMuted} fontSize={11} />
-                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
-                <Line type="monotone" dataKey="weight" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
-              </LineChart>
-            </ResponsiveContainer>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: consistency.nextMilestone ? 12 : 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Flame size={18} color={COLORS.accent} />
+            <div>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{consistency.weeklyStreak} week{consistency.weeklyStreak === 1 ? "" : "s"}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>current streak</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{consistency.totalWorkouts}</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>workouts logged</div>
+          </div>
+        </div>
+        {consistency.nextMilestone && (
+          <div>
+            <div style={{ height: 6, background: COLORS.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${Math.min(100, Math.round((consistency.totalWorkouts / consistency.nextMilestone) * 100))}%`, height: "100%", background: COLORS.lime, borderRadius: 4 }} />
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>{consistency.nextMilestone - consistency.totalWorkouts} workouts to your next milestone ({consistency.nextMilestone})</div>
           </div>
         )}
       </Card>
+
+      <BodyStats data={data} onSave={onSave} />
+
+      {exIdsLogged.length === 0 ? (
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>Log a few workouts on the Today tab and your strength progress will show up here.</Card>
+      ) : (
+        <>
+          <select style={{ ...inputStyle, marginBottom: 18 }} value={selectedExId} onChange={(e) => setSelectedExId(e.target.value)}>
+            {exIdsLogged.map((id) => <option key={id} value={id}>{exName(id)}</option>)}
+          </select>
+
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Top set weight over time</div>
+            {chartData.length < 2 ? (
+              <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Log at least 2 sessions with weight to see a trend line.</div>
+            ) : (
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData}>
+                    <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={11} />
+                    <YAxis stroke={COLORS.textMuted} fontSize={11} />
+                    <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="weight" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   );
 }
 
-function ClientMessages({ data, onSave }) {
+function BodyStats({ data, onSave }) {
+  const intake = data.intake || {};
+  const entries = useMemo(() => [...(data.bodyStats || [])].sort((a, b) => a.date.localeCompare(b.date)), [data.bodyStats]);
+  const latest = entries[entries.length - 1];
+
+  const [weight, setWeight] = useState("");
+  const [bodyFat, setBodyFat] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const bmi = latest ? computeBMI(latest.weight, intake.heightIn) : null;
+  const bmr = latest ? computeBMR(latest.weight, intake.heightIn, intake.age, intake.gender) : null;
+  const leanMass = latest?.bodyFat ? (Number(latest.weight) * (1 - Number(latest.bodyFat) / 100)).toFixed(1) : null;
+  const fatMass = latest?.bodyFat ? (Number(latest.weight) * (Number(latest.bodyFat) / 100)).toFixed(1) : null;
+
+  const addEntry = async () => {
+    if (!weight.trim()) return;
+    setSaving(true);
+    const others = entries.filter((e) => e.date !== todayISO());
+    const next = [...others, { id: uid(), date: todayISO(), weight: Number(weight), bodyFat: bodyFat ? Number(bodyFat) : null }];
+    await onSave({ ...data, bodyStats: next });
+    setWeight("");
+    setBodyFat("");
+    setSaving(false);
+  };
+
+  const removeEntry = async (id) => {
+    await onSave({ ...data, bodyStats: entries.filter((e) => e.id !== id) });
+  };
+
+  const weightChart = entries.filter((e) => e.weight).map((e) => ({ date: fmtDate(e.date), value: e.weight, raw: e.date }));
+  const fatChart = entries.filter((e) => e.bodyFat != null).map((e) => ({ date: fmtDate(e.date), value: e.bodyFat, raw: e.date }));
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Weekly stats</div>
+
+      {!intake.heightIn && (
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>Add your height in your profile (the file icon up top) to see BMI calculated automatically.</div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <input type="number" style={{ ...inputStyle, width: 110 }} placeholder="Weight (lbs)" value={weight} onChange={(e) => setWeight(e.target.value)} />
+        <input type="number" style={{ ...inputStyle, width: 130 }} placeholder="Body fat % (optional)" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} />
+        <Btn onClick={addEntry} disabled={saving}>{saving ? "Saving…" : "Log"}</Btn>
+      </div>
+
+      {latest && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10, marginBottom: 16 }}>
+          {bmi && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>BMI</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmi.toFixed(1)}</div>
+              <div style={{ fontSize: 10, color: COLORS.accent }}>{bmiCategory(bmi)}</div>
+            </div>
+          )}
+          {bmr && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Est. BMR</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmr}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>cal/day at rest</div>
+            </div>
+          )}
+          {leanMass && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Lean mass</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{leanMass} lbs</div>
+            </div>
+          )}
+          {fatMass && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Fat mass</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{fatMass} lbs</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {weightChart.length >= 2 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>Weight over time</div>
+          <div style={{ width: "100%", height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={weightChart}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {fatChart.length >= 2 && (
+        <div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>Body fat % over time</div>
+          <div style={{ width: "100%", height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={fatChart}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" stroke={COLORS.accent} strokeWidth={2} dot={{ r: 3, fill: COLORS.accent }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {entries.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          {[...entries].reverse().slice(0, 6).map((e) => (
+            <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtDate(e.date)} — {e.weight} lbs{e.bodyFat != null ? ` · ${e.bodyFat}% BF` : ""}</div>
+              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ClientMessages({ data, onSave, client }) {
   const [text, setText] = useState("");
   const messages = data.messages || [];
 
@@ -1090,6 +2525,11 @@ function ClientMessages({ data, onSave }) {
     if (!text.trim()) return;
     const next = [...messages, { id: uid(), from: "client", text: text.trim(), date: new Date().toISOString() }];
     await onSave({ ...data, messages: next });
+    fetch("https://ntfy.sh/xcel-pt-messages2026", {
+      method: "POST",
+      body: `${client?.name || "A client"}: ${text.trim()}`,
+      headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" },
+    }).catch(() => {});
     setText("");
   };
 
