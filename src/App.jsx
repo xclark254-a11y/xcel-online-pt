@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers } from "lucide-react";
 import { sGet, sSet } from "./firebase";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -111,6 +111,100 @@ const SEED_EXERCISES = [
 
 const MUSCLES = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.muscle)))];
 const EQUIPMENT = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.equipment)))];
+
+const TEMPLATE_PROGRAMS = [
+  {
+    id: "tpl-beginner-4wk",
+    name: "Beginner Weight Loss — 4 Week Kickstart",
+    level: "Beginner",
+    description: "3 full-body days per week using approachable equipment, with a short cardio finisher each day. Great for someone new to structured training.",
+    days: [
+      {
+        name: "Day A — Full Body",
+        exercises: [
+          { exerciseName: "Goblet Squat", sets: 3, reps: "12-15" },
+          { exerciseName: "Incline Dumbbell Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "12-15" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 2, reps: "10-12" },
+          { exerciseName: "Plank", sets: 3, reps: "30-45 sec" },
+          { exerciseName: "Jump Rope", sets: 1, reps: "5 min" },
+        ],
+      },
+      {
+        name: "Day B — Full Body",
+        exercises: [
+          { exerciseName: "Leg Press", sets: 3, reps: "12-15" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Push-Up", sets: 3, reps: "8-12" },
+          { exerciseName: "Lateral Raise", sets: 2, reps: "12-15" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20 total" },
+          { exerciseName: "Rowing Machine", sets: 1, reps: "5 min" },
+        ],
+      },
+      {
+        name: "Day C — Full Body",
+        exercises: [
+          { exerciseName: "Walking Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Inverted Row", sets: 3, reps: "8-12" },
+          { exerciseName: "Machine Chest Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Face Pull", sets: 2, reps: "15" },
+          { exerciseName: "Dead Bug", sets: 3, reps: "10 per side" },
+          { exerciseName: "Assault Bike", sets: 1, reps: "5 min" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-alllevels-4wk",
+    name: "All-Levels Weight Loss Program",
+    level: "All levels",
+    description: "4 days per week combining compound strength work with conditioning finishers. Scales up or down easily based on the weight a client uses.",
+    days: [
+      {
+        name: "Day 1 — Lower + Core",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "8-10" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "10-12" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Hanging Knee Raise", sets: 3, reps: "10-15" },
+          { exerciseName: "Kettlebell Swing", sets: 3, reps: "15-20" },
+        ],
+      },
+      {
+        name: "Day 2 — Upper Push/Pull",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "8-10" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "8-10" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 3, reps: "10-12" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10-12" },
+          { exerciseName: "Tricep Pushdown", sets: 2, reps: "12-15" },
+          { exerciseName: "Face Pull", sets: 2, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Conditioning",
+        exercises: [
+          { exerciseName: "Kettlebell Clean and Press", sets: 4, reps: "8 per side" },
+          { exerciseName: "Battle Ropes", sets: 4, reps: "30 sec" },
+          { exerciseName: "Assault Bike", sets: 4, reps: "1 min hard / 1 min easy" },
+          { exerciseName: "Mountain Climber", sets: 3, reps: "30 sec" },
+          { exerciseName: "Plank", sets: 3, reps: "45 sec" },
+        ],
+      },
+      {
+        name: "Day 4 — Full Body",
+        exercises: [
+          { exerciseName: "Sumo Deadlift", sets: 4, reps: "6-8" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "10-12" },
+          { exerciseName: "Push-Up", sets: 3, reps: "10-15" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20 total" },
+          { exerciseName: "Treadmill Intervals", sets: 1, reps: "10 min" },
+        ],
+      },
+    ],
+  },
+];
 
 const FONT_STACK = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
@@ -477,6 +571,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   const tabs = [
     { id: "clients", label: "Clients", icon: User },
     { id: "library", label: "Library", icon: Dumbbell },
+    { id: "templates", label: "Templates", icon: Layers },
     { id: "programs", label: "Programs", icon: CalendarDays },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
@@ -520,6 +615,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
       <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
         {tab === "clients" && <ClientsTab clients={clients} onRefresh={onRefreshClients} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
+        {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
       </div>
@@ -728,6 +824,109 @@ function VideoLinkEditor({ exercise, onSaved }) {
         onChange={(e) => setUrl(e.target.value)}
       />
       <Btn variant="subtle" style={{ padding: "6px 12px", fontSize: 12 }} onClick={save}>{saved ? <Check size={13} /> : "Save"}</Btn>
+    </div>
+  );
+}
+
+function TemplatesTab({ clients, exercises }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const [assignTarget, setAssignTarget] = useState({}); // templateId -> clientId
+  const [confirming, setConfirming] = useState(null); // templateId awaiting confirm
+  const [status, setStatus] = useState({}); // templateId -> "done" | "missing:name1,name2"
+
+  const resolveDays = (template) => {
+    const missing = [];
+    const days = template.days.map((day) => ({
+      id: uid(),
+      name: day.name,
+      exercises: day.exercises.map((ex) => {
+        const found = exercises.find((e) => e.name.toLowerCase() === ex.exerciseName.toLowerCase());
+        if (!found) missing.push(ex.exerciseName);
+        return { id: uid(), exerciseId: found?.id || null, sets: ex.sets, reps: ex.reps, notes: "" };
+      }).filter((ex) => ex.exerciseId),
+    }));
+    return { days, missing };
+  };
+
+  const assign = async (template) => {
+    const clientId = assignTarget[template.id];
+    if (!clientId) return;
+    const { days, missing } = resolveDays(template);
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
+    await sSet(`client:${clientId}`, { ...data, program: { days } });
+    setStatus({ ...status, [template.id]: missing.length ? `Assigned — couldn't find: ${missing.join(", ")}` : "Assigned successfully" });
+    setConfirming(null);
+    setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 4000);
+  };
+
+  if (clients.length === 0) {
+    return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign them a program.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Program templates</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Assigning a template replaces that client's current program.</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {TEMPLATE_PROGRAMS.map((t) => (
+          <Card key={t.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
+              </div>
+              <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                {expandedId === t.id ? "Hide" : "Preview"}
+              </button>
+            </div>
+
+            {expandedId === t.id && (
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                {t.days.map((day, i) => (
+                  <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{day.name}</div>
+                    {day.exercises.map((ex, j) => (
+                      <div key={j} style={{ fontSize: 11, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                        <span>{ex.exerciseName}</span>
+                        <span>{ex.sets} × {ex.reps}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                style={{ ...inputStyle, maxWidth: 200 }}
+                value={assignTarget[t.id] || ""}
+                onChange={(e) => setAssignTarget({ ...assignTarget, [t.id]: e.target.value })}
+              >
+                <option value="">Choose a client…</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {confirming === t.id ? (
+                <>
+                  <span style={{ fontSize: 11, color: COLORS.danger }}>Replace their current program?</span>
+                  <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assign(t)}>Yes, assign</Btn>
+                  <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(null)}>Cancel</Btn>
+                </>
+              ) : (
+                <Btn
+                  style={{ padding: "8px 12px", fontSize: 12 }}
+                  disabled={!assignTarget[t.id]}
+                  onClick={() => setConfirming(t.id)}
+                >
+                  Assign to client
+                </Btn>
+              )}
+            </div>
+            {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Assigned success") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
