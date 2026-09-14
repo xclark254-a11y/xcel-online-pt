@@ -4,6 +4,22 @@ import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDa
 import { sGet, sSet } from "./firebase";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+function toYouTubeEmbed(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    let id = "";
+    if (u.hostname.includes("youtu.be")) id = u.pathname.slice(1);
+    else if (u.searchParams.get("v")) id = u.searchParams.get("v");
+    else if (u.pathname.includes("/shorts/")) id = u.pathname.split("/shorts/")[1];
+    return id ? `https://www.youtube.com/embed/${id}` : null;
+  } catch {
+    return null;
+  }
+}
+function exerciseSearchUrl(name) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " exercise proper form")}`;
+}
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
@@ -608,7 +624,7 @@ function EditClientRow({ client, onSave, onCancel }) {
 
 function LibraryTab({ exercises, onRefresh }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "" });
+  const [form, setForm] = useState({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "", videoUrl: "" });
   const [muscleFilter, setMuscleFilter] = useState("All");
   const [query, setQuery] = useState("");
 
@@ -617,7 +633,7 @@ function LibraryTab({ exercises, onRefresh }) {
     const list = await sGet("app:exercises", []);
     list.push({ id: uid(), ...form, name: form.name.trim() });
     await sSet("app:exercises", list);
-    setForm({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "" });
+    setForm({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "", videoUrl: "" });
     setAdding(false);
     onRefresh();
   };
@@ -659,6 +675,9 @@ function LibraryTab({ exercises, onRefresh }) {
           <Field label="Instructions">
             <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
           </Field>
+          <Field label="Video URL (optional, YouTube link)">
+            <input style={inputStyle} placeholder="https://youtube.com/watch?v=..." value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} />
+          </Field>
           <Btn onClick={addExercise}>Save exercise</Btn>
         </Card>
       )}
@@ -679,9 +698,36 @@ function LibraryTab({ exercises, onRefresh }) {
             </div>
             <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 4 }}>{e.muscle} · {e.equipment}</div>
             <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.5 }}>{e.instructions}</div>
+            <VideoLinkEditor exercise={e} onSaved={onRefresh} />
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function VideoLinkEditor({ exercise, onSaved }) {
+  const [url, setUrl] = useState(exercise.videoUrl || "");
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    const list = await sGet("app:exercises", []);
+    const next = list.map((ex) => (ex.id === exercise.id ? { ...ex, videoUrl: url.trim() } : ex));
+    await sSet("app:exercises", next);
+    setSaved(true);
+    onSaved();
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+      <input
+        style={{ ...inputStyle, fontSize: 12, padding: "6px 10px" }}
+        placeholder="Paste a YouTube link…"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+      />
+      <Btn variant="subtle" style={{ padding: "6px 12px", fontSize: 12 }} onClick={save}>{saved ? <Check size={13} /> : "Save"}</Btn>
     </div>
   );
 }
@@ -858,7 +904,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
-        {tab === "messages" && <ClientMessages data={data} onSave={onSave} />}
+        {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
       </div>
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
@@ -952,7 +998,15 @@ function TodayTab({ data, exercises, onSave }) {
           return (
             <Card key={ex.id}>
               <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Target: {ex.sets} × {ex.reps}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+              <a
+                href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+              >
+                Watch example ↗
+              </a>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {sets.map((s, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1007,7 +1061,34 @@ function ClientLibrary({ exercises }) {
               <div style={{ fontSize: 11, color: COLORS.accent }}>{e.muscle}</div>
             </div>
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{e.equipment}</div>
-            {expanded === e.id && <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>}
+            {expanded === e.id && (
+              <div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
+                {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
+                  <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden" }}>
+                    <iframe
+                      width="100%"
+                      height="200"
+                      src={toYouTubeEmbed(e.videoUrl)}
+                      title={e.name}
+                      style={{ border: "none" }}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <a
+                    href={exerciseSearchUrl(e.name)}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                    style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
+                  >
+                    Watch an example ↗
+                  </a>
+                )}
+              </div>
+            )}
           </Card>
         ))}
         {filtered.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>}
@@ -1082,7 +1163,7 @@ function ProgressTab({ data, exercises }) {
   );
 }
 
-function ClientMessages({ data, onSave }) {
+function ClientMessages({ data, onSave, client }) {
   const [text, setText] = useState("");
   const messages = data.messages || [];
 
@@ -1090,6 +1171,11 @@ function ClientMessages({ data, onSave }) {
     if (!text.trim()) return;
     const next = [...messages, { id: uid(), from: "client", text: text.trim(), date: new Date().toISOString() }];
     await onSave({ ...data, messages: next });
+    fetch("https://ntfy.sh/xcel-pt-messages2026", {
+      method: "POST",
+      body: `${client?.name || "A client"}: ${text.trim()}`,
+      headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" },
+    }).catch(() => {});
     setText("");
   };
 
