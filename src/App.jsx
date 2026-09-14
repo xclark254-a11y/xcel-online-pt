@@ -858,7 +858,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
-        {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
+        {tab === "messages" && <ClientMessages data={data} onSave={onSave} />}
       </div>
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
@@ -1082,14 +1082,14 @@ function ProgressTab({ data, exercises }) {
   );
 }
 
-function ClientMessages({ data, onSave, client }) {
+function ClientMessages({ data, onSave }) {
   const [text, setText] = useState("");
   const messages = data.messages || [];
 
   const send = async () => {
     if (!text.trim()) return;
     const next = [...messages, { id: uid(), from: "client", text: text.trim(), date: new Date().toISOString() }];
-    await onSave({ ...data, messages: next });fetch("https://ntfy.sh/xcel-pt-messages2026", { method: "POST", body: `${client?.name || "A client"}: ${text.trim()}`, headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" }, }).catch(() => {});
+    await onSave({ ...data, messages: next });
     setText("");
   };
 
