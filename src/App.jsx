@@ -347,8 +347,8 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 14, background: COLORS.accentDim, marginBottom: 14 }}>
-            <Dumbbell size={26} color={COLORS.accent} />
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 72, height: 72, borderRadius: 16, overflow: "hidden", marginBottom: 14 }}>
+            <img src="/logo-mark.png" alt="Xcel Online PT" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
           <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>
             Xcel Online PT
@@ -893,9 +893,12 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
       <style>{FONT_STACK}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
-        <div>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+          </div>
         </div>
         <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
       </div>
