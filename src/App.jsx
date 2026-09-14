@@ -858,7 +858,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
-        {tab === "messages" && <ClientMessages data={data} onSave={onSave} />}
+        {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
       </div>
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
