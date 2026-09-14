@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple } from "lucide-react";
+import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -19,6 +20,43 @@ function toYouTubeEmbed(url) {
 }
 function exerciseSearchUrl(name) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " exercise proper form")}`;
+}
+
+const OZ_TO_G = 28.3495;
+
+async function searchFoods(query) {
+  if (!query.trim() || !USDA_API_KEY || USDA_API_KEY === "YOUR_USDA_API_KEY") return [];
+  try {
+    const res = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(query)}&pageSize=8&dataType=Foundation,SR%20Legacy,Branded`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.foods || []).map((f) => {
+      const per100g = {};
+      (f.foodNutrients || []).forEach((n) => {
+        const name = (n.nutrientName || "").toLowerCase();
+        if (name.includes("energy")) per100g.calories = n.value;
+        else if (name.includes("protein")) per100g.protein = n.value;
+        else if (name.includes("carbohydrate")) per100g.carbs = n.value;
+        else if (name.includes("total lipid") || name.includes("fat")) per100g.fat = n.value;
+      });
+      return { fdcId: f.fdcId, name: f.description, per100g };
+    }).filter((f) => f.per100g.calories !== undefined);
+  } catch (e) {
+    return [];
+  }
+}
+
+function macrosForOz(per100g, oz) {
+  const grams = (Number(oz) || 0) * OZ_TO_G;
+  const scale = grams / 100;
+  return {
+    calories: Math.round((per100g.calories || 0) * scale),
+    protein: Math.round((per100g.protein || 0) * scale),
+    carbs: Math.round((per100g.carbs || 0) * scale),
+    fat: Math.round((per100g.fat || 0) * scale),
+  };
 }
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -322,7 +360,7 @@ export default function App() {
   }, []);
 
   const loadClientData = async (clientId) => {
-    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
     setClientData(data);
   };
 
@@ -573,6 +611,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "templates", label: "Templates", icon: Layers },
     { id: "programs", label: "Programs", icon: CalendarDays },
+    { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
 
@@ -617,6 +656,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
+        {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
       </div>
     </div>
@@ -931,6 +971,62 @@ function TemplatesTab({ clients, exercises }) {
   );
 }
 
+function NutritionTargetsTab({ clients }) {
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [targets, setTargets] = useState({ calories: "", protein: "", carbs: "", fat: "" });
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    (async () => {
+      setLoading(true);
+      const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
+      setTargets(data.nutrition?.targets || { calories: "", protein: "", carbs: "", fat: "" });
+      setLoading(false);
+    })();
+  }, [selectedClientId]);
+
+  const save = async () => {
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
+    const nutrition = { ...(data.nutrition || {}), targets };
+    await sSet(`client:${selectedClientId}`, { ...data, nutrition });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first to set their nutrition goals.</div>;
+
+  return (
+    <div>
+      <select style={{ ...inputStyle, maxWidth: 260, marginBottom: 16 }} value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
+        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {loading ? <div style={{ color: COLORS.textMuted }}>Loading…</div> : (
+        <Card>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 14 }}>Daily targets</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 12 }}>
+            <Field label="Calories">
+              <input type="number" style={inputStyle} value={targets.calories} onChange={(e) => setTargets({ ...targets, calories: e.target.value })} />
+            </Field>
+            <Field label="Protein (g)">
+              <input type="number" style={inputStyle} value={targets.protein} onChange={(e) => setTargets({ ...targets, protein: e.target.value })} />
+            </Field>
+            <Field label="Carbs (g)">
+              <input type="number" style={inputStyle} value={targets.carbs} onChange={(e) => setTargets({ ...targets, carbs: e.target.value })} />
+            </Field>
+            <Field label="Fat (g)">
+              <input type="number" style={inputStyle} value={targets.fat} onChange={(e) => setTargets({ ...targets, fat: e.target.value })} />
+            </Field>
+          </div>
+          <Btn onClick={save} style={{ marginTop: 6 }}>{saved ? <Check size={15} /> : "Save targets"}</Btn>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function ProgramsTab({ clients, exercises }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
   const [program, setProgram] = useState({ days: [] });
@@ -1084,6 +1180,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
     { id: "library", label: "Library", icon: Dumbbell },
+    { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
@@ -1105,6 +1202,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
+        {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
       </div>
@@ -1224,6 +1322,191 @@ function TodayTab({ data, exercises, onSave }) {
       </div>
 
       <Btn onClick={saveWorkout} style={{ width: "100%", marginTop: 16 }}><Check size={16} /> Save today's workout</Btn>
+    </div>
+  );
+}
+
+function ClientNutrition({ data, onSave }) {
+  const targets = data.nutrition?.targets || {};
+  const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
+  const todayLog = (data.nutrition?.logs || []).find((l) => l.date === todayISO());
+  const entries = todayLog?.entries || [];
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState(null); // food result awaiting a quantity
+  const [oz, setOz] = useState("4");
+  const [manual, setManual] = useState(null); // { name, calories, protein, carbs, fat }
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const r = await searchFoods(query);
+      setResults(r);
+      setSearching(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const totals = entries.reduce((acc, e) => ({
+    calories: acc.calories + (e.calories || 0),
+    protein: acc.protein + (e.protein || 0),
+    carbs: acc.carbs + (e.carbs || 0),
+    fat: acc.fat + (e.fat || 0),
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+  const saveEntries = async (nextEntries) => {
+    const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
+    logs.push({ date: todayISO(), entries: nextEntries });
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const addFromSearch = async () => {
+    if (!picked) return;
+    const macros = macrosForOz(picked.per100g, oz);
+    const entry = { id: uid(), name: picked.name, oz: Number(oz) || 0, ...macros };
+    await saveEntries([...entries, entry]);
+    setPicked(null);
+    setQuery("");
+    setResults([]);
+    setOz("4");
+  };
+
+  const addManual = async () => {
+    if (!manual?.name?.trim()) return;
+    const entry = {
+      id: uid(),
+      name: manual.name.trim(),
+      oz: Number(manual.oz) || 0,
+      calories: Number(manual.calories) || 0,
+      protein: Number(manual.protein) || 0,
+      carbs: Number(manual.carbs) || 0,
+      fat: Number(manual.fat) || 0,
+    };
+    await saveEntries([...entries, entry]);
+    setManual(null);
+  };
+
+  const removeEntry = async (id) => {
+    await saveEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const Meter = ({ label, value, goal, unit }) => {
+    const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>
+          <span>{label}</span>
+          <span>{value}{unit} {goal ? `/ ${goal}${unit}` : ""}</span>
+        </div>
+        <div style={{ height: 6, background: COLORS.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: COLORS.accent, borderRadius: 4 }} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {!hasTargets ? (
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
+          Your trainer hasn't set your nutrition goals yet. Check back soon or ask in Messages.
+        </Card>
+      ) : (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Today's totals</div>
+          <Meter label="Calories" value={totals.calories} goal={Number(targets.calories) || 0} unit="" />
+          <Meter label="Protein" value={totals.protein} goal={Number(targets.protein) || 0} unit="g" />
+          <Meter label="Carbs" value={totals.carbs} goal={Number(targets.carbs) || 0} unit="g" />
+          <Meter label="Fat" value={totals.fat} goal={Number(targets.fat) || 0} unit="g" />
+        </Card>
+      )}
+
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
+        <input
+          style={{ ...inputStyle, paddingLeft: 34 }}
+          placeholder="Search a food (e.g. grilled chicken breast)…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
+        />
+      </div>
+
+      {searching && <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Searching…</div>}
+
+      {!picked && results.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {results.map((r) => (
+            <button
+              key={r.fdcId}
+              onClick={() => setPicked(r)}
+              style={{ ...inputStyle, textAlign: "left", cursor: "pointer", fontSize: 12 }}
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {picked && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>{picked.name}</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="number" style={{ ...inputStyle, width: 80 }} value={oz} onChange={(e) => setOz(e.target.value)} />
+            <span style={{ fontSize: 12, color: COLORS.textMuted }}>oz</span>
+            <Btn style={{ marginLeft: "auto" }} onClick={addFromSearch}><Plus size={14} /> Add</Btn>
+            <Btn variant="ghost" onClick={() => setPicked(null)}><X size={14} /></Btn>
+          </div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>
+            ≈ {macrosForOz(picked.per100g, oz).calories} cal · {macrosForOz(picked.per100g, oz).protein}g protein · {macrosForOz(picked.per100g, oz).carbs}g carbs · {macrosForOz(picked.per100g, oz).fat}g fat
+          </div>
+        </Card>
+      )}
+
+      {!manual ? (
+        <button
+          onClick={() => setManual({ name: "", oz: "", calories: "", protein: "", carbs: "", fat: "" })}
+          style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 16 }}
+        >
+          + Add manually instead
+        </button>
+      ) : (
+        <Card style={{ marginBottom: 16 }}>
+          <Field label="Food name">
+            <input style={inputStyle} value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
+            <Field label="Calories"><input type="number" style={inputStyle} value={manual.calories} onChange={(e) => setManual({ ...manual, calories: e.target.value })} /></Field>
+            <Field label="Protein (g)"><input type="number" style={inputStyle} value={manual.protein} onChange={(e) => setManual({ ...manual, protein: e.target.value })} /></Field>
+            <Field label="Carbs (g)"><input type="number" style={inputStyle} value={manual.carbs} onChange={(e) => setManual({ ...manual, carbs: e.target.value })} /></Field>
+            <Field label="Fat (g)"><input type="number" style={inputStyle} value={manual.fat} onChange={(e) => setManual({ ...manual, fat: e.target.value })} /></Field>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn onClick={addManual}>Add</Btn>
+            <Btn variant="ghost" onClick={() => setManual(null)}>Cancel</Btn>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Today's food</div>
+      {entries.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 12 }}>Nothing logged yet today.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {entries.map((e) => (
+          <Card key={e.id} style={{ padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{e.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  {e.oz ? `${e.oz} oz · ` : ""}{e.calories} cal · {e.protein}g P · {e.carbs}g C · {e.fat}g F
+                </div>
+              </div>
+              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
