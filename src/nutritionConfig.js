@@ -6,5 +6,5 @@
 //
 // Without a real key here, the food search bar won't return results, but
 // clients can still add food manually with the "Add manually" option.
-export const USDA_API_KEY = 9s61fU8Rso1k3TJOckLBnfGbfbedzYTUnqDnZahl
+export const USDA_API_KEY = "9s61fU8Rso1k3TJOckLBnfGbfbedzYTUnqDnZahl"
 ;
