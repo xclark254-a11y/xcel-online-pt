@@ -1668,7 +1668,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
           <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT · v1.1</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -1718,22 +1718,180 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   );
 }
 
+function FreeformWorkoutForm({ exercises, onSave, onCancel }) {
+  const [date, setDate] = useState(todayISO());
+  const [items, setItems] = useState([]);
+  const [pickId, setPickId] = useState("");
+
+  const grouped = useMemo(() => {
+    const byGroup = {};
+    exercises.forEach((e) => {
+      const g = e.muscle || "Other";
+      (byGroup[g] = byGroup[g] || []).push(e);
+    });
+    return byGroup;
+  }, [exercises]);
+
+  const addExercise = () => {
+    if (!pickId || items.some((it) => it.exerciseId === pickId)) { setPickId(""); return; }
+    setItems([...items, { id: uid(), exerciseId: pickId, sets: [{ reps: "", weight: "" }] }]);
+    setPickId("");
+  };
+
+  const removeExercise = (id) => setItems(items.filter((it) => it.id !== id));
+  const addSet = (id) => setItems(items.map((it) => (it.id === id ? { ...it, sets: [...it.sets, { reps: "", weight: "" }] } : it)));
+  const removeSet = (id, idx) => setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.filter((_, i) => i !== idx) } : it)));
+  const updateSet = (id, idx, field, value) =>
+    setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.map((s, i) => (i === idx ? { ...s, [field]: value } : s)) } : it)));
+
+  const canSave = !!date && items.length > 0;
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onSave({
+      id: uid(),
+      date,
+      freeform: true,
+      dayName: "Custom workout",
+      entries: items.map((it) => ({ exerciseId: it.exerciseId, sets: it.sets })),
+    });
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 12 }}>Log a workout on your own</div>
+
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+
+      <Field label="Add an exercise">
+        <div style={{ display: "flex", gap: 8 }}>
+          <select style={{ ...inputStyle, flex: 1 }} value={pickId} onChange={(e) => setPickId(e.target.value)}>
+            <option value="">Choose from library…</option>
+            {Object.entries(grouped).map(([group, list]) => (
+              <optgroup key={group} label={group}>
+                {list.map((ex) => (
+                  <option key={ex.id} value={ex.id}>{ex.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <Btn variant="subtle" onClick={addExercise}><Plus size={15} /> Add</Btn>
+        </div>
+      </Field>
+
+      {items.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 14 }}>
+          {items.map((it) => {
+            const exDef = exercises.find((e) => e.id === it.exerciseId);
+            return (
+              <div key={it.id} style={{ border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{exDef?.name || "Exercise"}</div>
+                  <button onClick={() => removeExercise(it.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                  {it.sets.map((s, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                      <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(it.id, i, "reps", e.target.value)} />
+                      <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(it.id, i, "weight", e.target.value)} />
+                      {it.sets.length > 1 && (
+                        <button onClick={() => removeSet(it.id, i)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => addSet(it.id)} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, cursor: "pointer", padding: 0 }}>
+                  + Add set
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={handleSave} disabled={!canSave} style={{ flex: 1 }}><Check size={16} /> Save workout</Btn>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </Card>
+  );
+}
+
+function FreeformHistory({ logs, exercises, onDelete }) {
+  const items = useMemo(
+    () => [...logs].filter((l) => l.freeform).sort((a, b) => b.date.localeCompare(a.date)),
+    [logs]
+  );
+  if (items.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13, color: COLORS.textMuted, marginBottom: 8 }}>
+        Your logged workouts
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map((l) => (
+          <Card key={l.id} style={{ padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(l.date)}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  {l.entries.map((e) => exercises.find((ex) => ex.id === e.exerciseId)?.name || "Exercise").join(", ")}
+                </div>
+              </div>
+              <button onClick={() => onDelete(l.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TodayTab({ data, exercises, onSave }) {
   const days = data.program?.days || [];
   const [dayIdx, setDayIdx] = useState(0);
   const day = days[dayIdx];
   const todayLog = useMemo(() => data.logs.find((l) => l.date === todayISO() && l.dayId === day?.id), [data.logs, day]);
   const [entries, setEntries] = useState(() => todayLog?.entries || []);
+  const [showFreeform, setShowFreeform] = useState(false);
 
   useEffect(() => {
     setEntries(todayLog?.entries || []);
   }, [dayIdx, todayLog]);
 
+  const saveFreeform = async (log) => {
+    await onSave({ ...data, logs: [...data.logs, log] });
+    setShowFreeform(false);
+  };
+
+  const deleteFreeform = async (id) => {
+    await onSave({ ...data, logs: data.logs.filter((l) => l.id !== id) });
+  };
+
   if (days.length === 0) {
     return (
-      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
-        Your trainer hasn't assigned a program yet. Check back soon, or see a note in Messages.
-      </Card>
+      <div>
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
+          Your trainer hasn't assigned a program yet. Check back soon, or see a note in Messages.
+        </Card>
+        {showFreeform ? (
+          <FreeformWorkoutForm exercises={exercises} onSave={saveFreeform} onCancel={() => setShowFreeform(false)} />
+        ) : (
+          <Btn variant="subtle" onClick={() => setShowFreeform(true)} style={{ width: "100%", marginBottom: 16 }}>
+            <Plus size={16} /> Log a workout on your own
+          </Btn>
+        )}
+        <FreeformHistory logs={data.logs} exercises={exercises} onDelete={deleteFreeform} />
+      </div>
     );
   }
 
@@ -1804,6 +1962,17 @@ function TodayTab({ data, exercises, onSave }) {
       </div>
 
       <Btn onClick={saveWorkout} style={{ width: "100%", marginTop: 16 }}><Check size={16} /> Save today's workout</Btn>
+
+      <div style={{ marginTop: 28, borderTop: `1px solid ${COLORS.border}`, paddingTop: 20 }}>
+        {showFreeform ? (
+          <FreeformWorkoutForm exercises={exercises} onSave={saveFreeform} onCancel={() => setShowFreeform(false)} />
+        ) : (
+          <Btn variant="subtle" onClick={() => setShowFreeform(true)} style={{ width: "100%", marginBottom: 16 }}>
+            <Plus size={16} /> Log a workout on your own
+          </Btn>
+        )}
+        <FreeformHistory logs={data.logs} exercises={exercises} onDelete={deleteFreeform} />
+      </div>
     </div>
   );
 }
@@ -2118,11 +2287,17 @@ function ClientLibrary({ exercises }) {
 function ProgressTab({ data, exercises, clientId, onSave }) {
   const exIdsLogged = useMemo(() => {
     const ids = new Set();
-    data.logs.forEach((l) => l.entries.forEach((e) => {
-      const day = (data.program.days || []).find((d) => d.id === l.dayId);
-      const dayEx = day?.exercises.find((de) => de.id === e.dayExId);
-      if (dayEx) ids.add(dayEx.exerciseId);
-    }));
+    data.logs.forEach((l) => {
+      if (l.freeform) {
+        l.entries.forEach((e) => e.exerciseId && ids.add(e.exerciseId));
+        return;
+      }
+      l.entries.forEach((e) => {
+        const day = (data.program.days || []).find((d) => d.id === l.dayId);
+        const dayEx = day?.exercises.find((de) => de.id === e.dayExId);
+        if (dayEx) ids.add(dayEx.exerciseId);
+      });
+    });
     return Array.from(ids);
   }, [data]);
 
@@ -2136,6 +2311,13 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
     if (!selectedExId) return [];
     const points = [];
     data.logs.forEach((l) => {
+      if (l.freeform) {
+        const entry = l.entries.find((e) => e.exerciseId === selectedExId);
+        if (!entry) return;
+        const maxWeight = Math.max(0, ...entry.sets.map((s) => Number(s.weight) || 0));
+        if (maxWeight > 0) points.push({ date: fmtDate(l.date), weight: maxWeight, raw: l.date });
+        return;
+      }
       const day = (data.program.days || []).find((d) => d.id === l.dayId);
       const dayEx = day?.exercises.find((de) => de.exerciseId === selectedExId);
       if (!dayEx) return;
