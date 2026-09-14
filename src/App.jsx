@@ -48,6 +48,87 @@ async function searchFoods(query) {
   }
 }
 
+const MEAL_OPTIONS = {
+  breakfast: [
+    { name: "Egg whites, oats & banana", calories: 380, protein: 28, carbs: 52, fat: 6 },
+    { name: "Greek yogurt, berries & granola", calories: 320, protein: 24, carbs: 42, fat: 6 },
+    { name: "3 whole eggs & whole wheat toast", calories: 420, protein: 26, carbs: 34, fat: 20 },
+    { name: "Protein oatmeal with peanut butter", calories: 480, protein: 32, carbs: 50, fat: 16 },
+    { name: "Turkey bacon, eggs & avocado toast", calories: 460, protein: 30, carbs: 30, fat: 24 },
+    { name: "Protein smoothie (whey, banana, milk)", calories: 350, protein: 35, carbs: 40, fat: 6 },
+    { name: "Cottage cheese, pineapple & almonds", calories: 300, protein: 26, carbs: 28, fat: 10 },
+    { name: "Breakfast burrito (eggs, black beans, salsa)", calories: 500, protein: 28, carbs: 48, fat: 20 },
+    { name: "Overnight oats with chia & almond milk", calories: 340, protein: 14, carbs: 52, fat: 10 },
+    { name: "Egg & veggie scramble with cheese", calories: 360, protein: 26, carbs: 12, fat: 24 },
+    { name: "Bagel with lox & cream cheese", calories: 440, protein: 24, carbs: 50, fat: 16 },
+    { name: "Protein pancakes with syrup", calories: 400, protein: 30, carbs: 46, fat: 10 },
+  ],
+  lunch: [
+    { name: "Grilled chicken, rice & broccoli", calories: 520, protein: 45, carbs: 55, fat: 10 },
+    { name: "Turkey wrap with veggies & hummus", calories: 460, protein: 32, carbs: 44, fat: 16 },
+    { name: "Tuna salad over greens", calories: 380, protein: 38, carbs: 14, fat: 18 },
+    { name: "Chicken burrito bowl (rice, beans, salsa)", calories: 620, protein: 42, carbs: 68, fat: 16 },
+    { name: "Salmon, quinoa & asparagus", calories: 560, protein: 40, carbs: 42, fat: 22 },
+    { name: "Turkey chili with cornbread", calories: 540, protein: 36, carbs: 52, fat: 18 },
+    { name: "Steak & sweet potato", calories: 600, protein: 44, carbs: 46, fat: 22 },
+    { name: "Chicken Caesar salad (light dressing)", calories: 450, protein: 38, carbs: 18, fat: 24 },
+    { name: "Shrimp stir-fry with brown rice", calories: 500, protein: 34, carbs: 58, fat: 12 },
+    { name: "Turkey sandwich, whole grain bread", calories: 420, protein: 28, carbs: 46, fat: 12 },
+    { name: "Beef & veggie stir-fry", calories: 540, protein: 38, carbs: 40, fat: 22 },
+    { name: "Lentil soup with whole grain roll", calories: 400, protein: 20, carbs: 60, fat: 8 },
+  ],
+  dinner: [
+    { name: "Baked chicken breast, rice & green beans", calories: 550, protein: 46, carbs: 50, fat: 12 },
+    { name: "Grilled salmon, sweet potato & spinach", calories: 580, protein: 40, carbs: 44, fat: 22 },
+    { name: "Lean ground beef tacos (corn tortillas)", calories: 600, protein: 38, carbs: 50, fat: 24 },
+    { name: "Turkey meatballs with whole wheat pasta", calories: 620, protein: 42, carbs: 60, fat: 18 },
+    { name: "Grilled shrimp skewers & couscous", calories: 480, protein: 36, carbs: 46, fat: 12 },
+    { name: "Pork tenderloin, roasted potatoes & carrots", calories: 560, protein: 40, carbs: 44, fat: 18 },
+    { name: "Chicken stir-fry with mixed vegetables", calories: 500, protein: 40, carbs: 38, fat: 16 },
+    { name: "Baked cod, quinoa & roasted vegetables", calories: 460, protein: 36, carbs: 40, fat: 12 },
+    { name: "Turkey burger (no bun) with side salad", calories: 440, protein: 38, carbs: 16, fat: 24 },
+    { name: "Beef & broccoli over rice", calories: 580, protein: 38, carbs: 54, fat: 18 },
+    { name: "Grilled chicken fajitas (peppers & onions)", calories: 520, protein: 40, carbs: 42, fat: 18 },
+    { name: "Stuffed bell peppers (turkey & rice)", calories: 480, protein: 32, carbs: 44, fat: 16 },
+  ],
+  snack: [
+    { name: "Protein shake", calories: 160, protein: 25, carbs: 6, fat: 3 },
+    { name: "Apple with peanut butter", calories: 220, protein: 6, carbs: 28, fat: 10 },
+    { name: "Greek yogurt cup", calories: 140, protein: 15, carbs: 12, fat: 3 },
+    { name: "Handful of almonds", calories: 170, protein: 6, carbs: 6, fat: 15 },
+    { name: "Rice cakes with almond butter", calories: 200, protein: 6, carbs: 24, fat: 9 },
+    { name: "Cottage cheese with berries", calories: 160, protein: 18, carbs: 12, fat: 4 },
+    { name: "Protein bar", calories: 210, protein: 20, carbs: 22, fat: 7 },
+    { name: "Hard-boiled eggs (2)", calories: 140, protein: 12, carbs: 1, fat: 10 },
+    { name: "Beef jerky", calories: 120, protein: 14, carbs: 4, fat: 5 },
+    { name: "Baby carrots with hummus", calories: 150, protein: 5, carbs: 18, fat: 7 },
+  ],
+};
+
+function generateMealPlan(targets) {
+  const cal = Number(targets.calories) || 2000;
+  const slots = [
+    { key: "breakfast", label: "Breakfast", share: 0.25 },
+    { key: "lunch", label: "Lunch", share: 0.3 },
+    { key: "dinner", label: "Dinner", share: 0.35 },
+    { key: "snack", label: "Snack", share: 0.1 },
+  ];
+  const meals = slots.map((slot) => {
+    const target = cal * slot.share;
+    const options = [...MEAL_OPTIONS[slot.key]].sort((a, b) => Math.abs(a.calories - target) - Math.abs(b.calories - target));
+    const closest = options.slice(0, 4);
+    const pick = closest[Math.floor(Math.random() * closest.length)];
+    return { ...pick, slot: slot.label };
+  });
+  const totals = meals.reduce((acc, m) => ({
+    calories: acc.calories + m.calories,
+    protein: acc.protein + m.protein,
+    carbs: acc.carbs + m.carbs,
+    fat: acc.fat + m.fat,
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  return { meals, totals };
+}
+
 function macrosForOz(per100g, oz) {
   const grams = (Number(oz) || 0) * OZ_TO_G;
   const scale = grams / 100;
@@ -1766,6 +1847,7 @@ function ClientNutrition({ data, onSave }) {
   const [picked, setPicked] = useState(null); // food result awaiting a quantity
   const [oz, setOz] = useState("4");
   const [manual, setManual] = useState(null); // { name, calories, protein, carbs, fat }
+  const [mealPlan, setMealPlan] = useState(null);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
@@ -1817,6 +1899,21 @@ function ClientNutrition({ data, onSave }) {
     setManual(null);
   };
 
+  const logMealPlan = async () => {
+    if (!mealPlan) return;
+    const newEntries = mealPlan.meals.map((m) => ({
+      id: uid(),
+      name: `${m.slot}: ${m.name}`,
+      oz: 0,
+      calories: m.calories,
+      protein: m.protein,
+      carbs: m.carbs,
+      fat: m.fat,
+    }));
+    await saveEntries([...entries, ...newEntries]);
+    setMealPlan(null);
+  };
+
   const removeEntry = async (id) => {
     await saveEntries(entries.filter((e) => e.id !== id));
   };
@@ -1849,6 +1946,36 @@ function ClientNutrition({ data, onSave }) {
           <Meter label="Protein" value={totals.protein} goal={Number(targets.protein) || 0} unit="g" />
           <Meter label="Carbs" value={totals.carbs} goal={Number(targets.carbs) || 0} unit="g" />
           <Meter label="Fat" value={totals.fat} goal={Number(targets.fat) || 0} unit="g" />
+        </Card>
+      )}
+
+      {hasTargets && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: mealPlan ? 12 : 0 }}>
+            <div>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14 }}>Example meal plan</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>Simple meal ideas sized to your daily goals — a reference, not exact tracking.</div>
+            </div>
+          </div>
+          <Btn variant={mealPlan ? "subtle" : "primary"} style={{ marginTop: 12 }} onClick={() => setMealPlan(generateMealPlan(targets))}>
+            {mealPlan ? "Shuffle meals" : "Generate example meals"}
+          </Btn>
+
+          {mealPlan && (
+            <div style={{ marginTop: 14 }}>
+              {mealPlan.meals.map((m, i) => (
+                <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 600 }}>{m.slot}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{m.name}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{m.calories} cal · {m.protein}g P · {m.carbs}g C · {m.fat}g F</div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, marginBottom: 12 }}>
+                Day total: {mealPlan.totals.calories} cal · {mealPlan.totals.protein}g P · {mealPlan.totals.carbs}g C · {mealPlan.totals.fat}g F (target: {targets.calories || "—"} cal)
+              </div>
+              <Btn onClick={logMealPlan}><Plus size={14} /> Log these to today</Btn>
+            </div>
+          )}
         </Card>
       )}
 
