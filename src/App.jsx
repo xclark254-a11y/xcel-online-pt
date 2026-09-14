@@ -91,6 +91,29 @@ function computeConsistency(logs) {
   return { weeklyStreak: streak, totalWorkouts: total, achievedMilestone: achieved, nextMilestone: next };
 }
 
+function computeBMI(weightLb, heightIn) {
+  if (!weightLb || !heightIn) return null;
+  return (703 * Number(weightLb)) / (Number(heightIn) * Number(heightIn));
+}
+
+function bmiCategory(bmi) {
+  if (bmi === null) return "";
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 25) return "Normal";
+  if (bmi < 30) return "Overweight";
+  return "Obese";
+}
+
+function computeBMR(weightLb, heightIn, age, gender) {
+  if (!weightLb || !heightIn || !age) return null;
+  const kg = Number(weightLb) * 0.453592;
+  const cm = Number(heightIn) * 2.54;
+  const base = 10 * kg + 6.25 * cm - 5 * Number(age);
+  if (gender === "Male") return Math.round(base + 5);
+  if (gender === "Female") return Math.round(base - 161);
+  return Math.round(base - 78); // average estimate when gender isn't specified
+}
+
 // ---------- seed data ----------
 const SEED_EXERCISES = [
   { id: uid(), name: "Barbell Back Squat", muscle: "Legs", equipment: "Barbell", instructions: "Bar on upper traps, feet shoulder-width. Break at hips and knees together, descend to at least parallel, drive up through the whole foot." },
@@ -773,17 +796,22 @@ function ClientsTab({ clients, onRefresh }) {
 function IntakeViewer({ clientId }) {
   const [open, setOpen] = useState(false);
   const [intake, setIntake] = useState(null);
+  const [latestStats, setLatestStats] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const toggle = async () => {
-    if (!open && !intake) {
+    if (!open && intake === null) {
       setLoading(true);
       const data = await sGet(`client:${clientId}`, {});
       setIntake(data.intake || false);
+      const stats = (data.bodyStats || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+      setLatestStats(stats[stats.length - 1] || null);
       setLoading(false);
     }
     setOpen(!open);
   };
+
+  const bmi = latestStats && intake?.heightIn ? computeBMI(latestStats.weight, intake.heightIn) : null;
 
   return (
     <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
@@ -796,8 +824,14 @@ function IntakeViewer({ clientId }) {
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.6 }}>
           <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${intake.heightIn} in` : "—"} / {intake.gender || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
           <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
+          {latestStats && (
+            <div style={{ marginTop: 6 }}>
+              <strong style={{ color: COLORS.text }}>Latest stats ({fmtDate(latestStats.date)}):</strong> {latestStats.weight} lbs{latestStats.bodyFat != null ? `, ${latestStats.bodyFat}% BF` : ""}{bmi ? `, BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})` : ""}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1247,6 +1281,9 @@ function IntakeForm({ data, onSave, onClose }) {
     experience: existing.experience || "Beginner",
     equipment: existing.equipment || "",
     injuries: existing.injuries || "",
+    age: existing.age || "",
+    heightIn: existing.heightIn || "",
+    gender: existing.gender || "Prefer not to say",
   });
   const [saving, setSaving] = useState(false);
 
@@ -1276,6 +1313,23 @@ function IntakeForm({ data, onSave, onClose }) {
             <option>Advanced</option>
           </select>
         </Field>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
+          <Field label="Age">
+            <input type="number" style={inputStyle} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
+          </Field>
+          <Field label="Height (in)">
+            <input type="number" style={inputStyle} placeholder="e.g. 68" value={form.heightIn} onChange={(e) => setForm({ ...form, heightIn: e.target.value })} />
+          </Field>
+          <Field label="Gender">
+            <select style={inputStyle} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <option>Male</option>
+              <option>Female</option>
+              <option>Prefer not to say</option>
+            </select>
+          </Field>
+        </div>
+
         <Field label="What equipment do you have access to?">
           <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. full gym, home dumbbells only, bodyweight only" value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} />
         </Field>
@@ -1773,6 +1827,8 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
         )}
       </Card>
 
+      <BodyStats data={data} onSave={onSave} />
+
       {exIdsLogged.length === 0 ? (
         <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>Log a few workouts on the Today tab and your strength progress will show up here.</Card>
       ) : (
@@ -1802,6 +1858,131 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
         </>
       )}
     </div>
+  );
+}
+
+function BodyStats({ data, onSave }) {
+  const intake = data.intake || {};
+  const entries = useMemo(() => [...(data.bodyStats || [])].sort((a, b) => a.date.localeCompare(b.date)), [data.bodyStats]);
+  const latest = entries[entries.length - 1];
+
+  const [weight, setWeight] = useState("");
+  const [bodyFat, setBodyFat] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const bmi = latest ? computeBMI(latest.weight, intake.heightIn) : null;
+  const bmr = latest ? computeBMR(latest.weight, intake.heightIn, intake.age, intake.gender) : null;
+  const leanMass = latest?.bodyFat ? (Number(latest.weight) * (1 - Number(latest.bodyFat) / 100)).toFixed(1) : null;
+  const fatMass = latest?.bodyFat ? (Number(latest.weight) * (Number(latest.bodyFat) / 100)).toFixed(1) : null;
+
+  const addEntry = async () => {
+    if (!weight.trim()) return;
+    setSaving(true);
+    const others = entries.filter((e) => e.date !== todayISO());
+    const next = [...others, { id: uid(), date: todayISO(), weight: Number(weight), bodyFat: bodyFat ? Number(bodyFat) : null }];
+    await onSave({ ...data, bodyStats: next });
+    setWeight("");
+    setBodyFat("");
+    setSaving(false);
+  };
+
+  const removeEntry = async (id) => {
+    await onSave({ ...data, bodyStats: entries.filter((e) => e.id !== id) });
+  };
+
+  const weightChart = entries.filter((e) => e.weight).map((e) => ({ date: fmtDate(e.date), value: e.weight, raw: e.date }));
+  const fatChart = entries.filter((e) => e.bodyFat != null).map((e) => ({ date: fmtDate(e.date), value: e.bodyFat, raw: e.date }));
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Weekly stats</div>
+
+      {!intake.heightIn && (
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>Add your height in your profile (the file icon up top) to see BMI calculated automatically.</div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <input type="number" style={{ ...inputStyle, width: 110 }} placeholder="Weight (lbs)" value={weight} onChange={(e) => setWeight(e.target.value)} />
+        <input type="number" style={{ ...inputStyle, width: 130 }} placeholder="Body fat % (optional)" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} />
+        <Btn onClick={addEntry} disabled={saving}>{saving ? "Saving…" : "Log"}</Btn>
+      </div>
+
+      {latest && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10, marginBottom: 16 }}>
+          {bmi && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>BMI</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmi.toFixed(1)}</div>
+              <div style={{ fontSize: 10, color: COLORS.accent }}>{bmiCategory(bmi)}</div>
+            </div>
+          )}
+          {bmr && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Est. BMR</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmr}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>cal/day at rest</div>
+            </div>
+          )}
+          {leanMass && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Lean mass</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{leanMass} lbs</div>
+            </div>
+          )}
+          {fatMass && (
+            <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>Fat mass</div>
+              <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{fatMass} lbs</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {weightChart.length >= 2 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>Weight over time</div>
+          <div style={{ width: "100%", height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={weightChart}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {fatChart.length >= 2 && (
+        <div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>Body fat % over time</div>
+          <div style={{ width: "100%", height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={fatChart}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" stroke={COLORS.accent} strokeWidth={2} dot={{ r: 3, fill: COLORS.accent }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {entries.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          {[...entries].reverse().slice(0, 6).map((e) => (
+            <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtDate(e.date)} — {e.weight} lbs{e.bodyFat != null ? ` · ${e.bodyFat}% BF` : ""}</div>
+              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
