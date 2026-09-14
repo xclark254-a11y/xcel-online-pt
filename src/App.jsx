@@ -831,18 +831,20 @@ const pageBase = {
 
 // ============================================================
 function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
-  const [selected, setSelected] = useState(null);
+  const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
 
   const handleLogin = () => {
-    if (!selected) return;
-    if ((selected.pin || "") !== pin) {
-      setError("Incorrect PIN");
+    const match = clients.find(
+      (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase() && (c.pin || "") === pin
+    );
+    if (!match) {
+      setError("Name or PIN not recognized");
       return;
     }
     setError("");
-    onClientLogin(selected);
+    onClientLogin(match);
   };
 
   return (
@@ -859,60 +861,31 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
           <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>Sign in to see your workouts</p>
         </div>
 
-        {!selected ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {clients.length === 0 && (
-              <Card style={{ textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
-                No clients set up yet. Your trainer needs to add you first.
-              </Card>
-            )}
-            {clients.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelected(c)}
-                style={{
-                  ...inputStyle,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  padding: "14px 14px",
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 999, background: COLORS.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <User size={16} color={COLORS.textMuted} />
-                </div>
-                <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15 }}>{c.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div>
-            <button onClick={() => { setSelected(null); setPin(""); setError(""); }} style={{ background: "none", border: "none", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer", fontSize: 13, padding: 0 }}>
-              <ChevronLeft size={16} /> Back
-            </button>
-            <Card>
-              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 14 }}>
-                Hey {selected.name.split(" ")[0]} 👋
-              </div>
-              <Field label="Enter your PIN">
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  style={inputStyle}
-                  placeholder="••••"
-                  autoFocus
-                />
-              </Field>
-              {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
-              <Btn onClick={handleLogin} style={{ width: "100%" }}>Log in</Btn>
-            </Card>
-          </div>
-        )}
+        <Card>
+          <Field label="Your name">
+            <input
+              style={inputStyle}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              placeholder="Full name"
+              autoFocus
+            />
+          </Field>
+          <Field label="PIN">
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              style={inputStyle}
+              placeholder="••••"
+            />
+          </Field>
+          {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          <Btn onClick={handleLogin} style={{ width: "100%" }}>Log in</Btn>
+        </Card>
 
         <div style={{ textAlign: "center", marginTop: 28 }}>
           <button onClick={onTrainerClick} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
