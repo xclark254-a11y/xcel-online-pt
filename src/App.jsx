@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -45,6 +45,26 @@ async function searchFoods(query) {
     }).filter((f) => f.per100g.calories !== undefined);
   } catch (e) {
     return [];
+  }
+}
+
+async function lookupBarcode(code) {
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.status !== 1 || !data.product) return null;
+    const n = data.product.nutriments || {};
+    const per100g = {
+      calories: n["energy-kcal_100g"] ?? n["energy-kcal"],
+      protein: n["proteins_100g"],
+      carbs: n["carbohydrates_100g"],
+      fat: n["fat_100g"],
+    };
+    if (per100g.calories === undefined || per100g.calories === null) return null;
+    return { name: data.product.product_name || data.product.generic_name || "Scanned item", per100g };
+  } catch (e) {
+    return null;
   }
 }
 
@@ -1977,6 +1997,56 @@ function TodayTab({ data, exercises, onSave }) {
   );
 }
 
+function BarcodeScanner({ onDetected, onClose }) {
+  const videoRef = useRef(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    let controlsRef = null;
+
+    (async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        const reader = new BrowserMultiFormatReader();
+        const controls = await reader.decodeFromConstraints(
+          { video: { facingMode: "environment" } },
+          videoRef.current,
+          (result) => {
+            if (result && active) {
+              active = false;
+              controls.stop();
+              onDetected(result.getText());
+            }
+          }
+        );
+        controlsRef = controls;
+      } catch (e) {
+        setError("Couldn't access your camera. Check that this site has camera permission in your browser settings, then try again.");
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (controlsRef) controlsRef.stop();
+    };
+  }, [onDetected]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <button onClick={onClose} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: "#fff", cursor: "pointer" }}><X size={26} /></button>
+      {error ? (
+        <div style={{ color: COLORS.danger, textAlign: "center", maxWidth: 300, fontSize: 13 }}>{error}</div>
+      ) : (
+        <>
+          <video ref={videoRef} style={{ width: "100%", maxWidth: 420, borderRadius: 12, background: "#000" }} muted playsInline />
+          <div style={{ color: "#fff", fontSize: 13, marginTop: 14 }}>Point your camera at a barcode</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ClientNutrition({ data, onSave }) {
   const targets = data.nutrition?.targets || {};
   const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
@@ -1990,6 +2060,8 @@ function ClientNutrition({ data, onSave }) {
   const [oz, setOz] = useState("4");
   const [manual, setManual] = useState(null); // { name, calories, protein, carbs, fat }
   const [mealPlan, setMealPlan] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [barcodeError, setBarcodeError] = useState("");
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
@@ -2060,6 +2132,39 @@ function ClientNutrition({ data, onSave }) {
     await saveEntries(entries.filter((e) => e.id !== id));
   };
 
+  const favorites = data.nutrition?.favorites || [];
+
+  const saveFavoriteList = async (nextFavorites) => {
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), favorites: nextFavorites } });
+  };
+
+  const addFavorite = async (entry) => {
+    if (favorites.some((f) => f.name === entry.name && f.oz === entry.oz)) return;
+    const fav = { id: uid(), name: entry.name, oz: entry.oz, calories: entry.calories, protein: entry.protein, carbs: entry.carbs, fat: entry.fat };
+    await saveFavoriteList([...favorites, fav]);
+  };
+
+  const removeFavorite = async (id) => {
+    await saveFavoriteList(favorites.filter((f) => f.id !== id));
+  };
+
+  const logFavorite = async (fav) => {
+    const entry = { id: uid(), name: fav.name, oz: fav.oz, calories: fav.calories, protein: fav.protein, carbs: fav.carbs, fat: fav.fat };
+    await saveEntries([...entries, entry]);
+  };
+
+  const handleBarcodeDetected = async (code) => {
+    setScanning(false);
+    setBarcodeError("");
+    const result = await lookupBarcode(code);
+    if (!result) {
+      setBarcodeError("Couldn't find that product in the barcode database — try searching by name instead.");
+      return;
+    }
+    setPicked(result);
+    setQuery(result.name);
+  };
+
   const Meter = ({ label, value, goal, unit }) => {
     const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
     return (
@@ -2126,15 +2231,44 @@ function ClientNutrition({ data, onSave }) {
         </Card>
       )}
 
-      <div style={{ position: "relative", marginBottom: 10 }}>
-        <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
-        <input
-          style={{ ...inputStyle, paddingLeft: 34 }}
-          placeholder="Search a food (e.g. grilled chicken breast)…"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
-        />
+      {favorites.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Your saved foods</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {favorites.map((f) => (
+              <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                    {f.oz ? `${f.oz} oz · ` : ""}{f.calories} cal · {f.protein}g P · {f.carbs}g C · {f.fat}g F
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Btn variant="subtle" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => logFavorite(f)}><Plus size={13} /> Add</Btn>
+                  <button onClick={() => removeFavorite(f.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
+          <input
+            style={{ ...inputStyle, paddingLeft: 34 }}
+            placeholder="Search a food (e.g. grilled chicken breast)…"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
+          />
+        </div>
+        <Btn variant="subtle" onClick={() => { setBarcodeError(""); setScanning(true); }}><ScanLine size={16} /></Btn>
       </div>
+      {barcodeError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{barcodeError}</div>}
+      {scanning && (
+        <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScanning(false)} />
+      )}
 
       {searching && <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Searching…</div>}
 
@@ -2204,7 +2338,16 @@ function ClientNutrition({ data, onSave }) {
                   {e.oz ? `${e.oz} oz · ` : ""}{e.calories} cal · {e.protein}g P · {e.carbs}g C · {e.fat}g F
                 </div>
               </div>
-              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  onClick={() => addFavorite(e)}
+                  title="Save as a favorite for quick re-logging"
+                  style={{ background: "none", border: "none", color: favorites.some((f) => f.name === e.name && f.oz === e.oz) ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}
+                >
+                  <Star size={15} fill={favorites.some((f) => f.name === e.name && f.oz === e.oz) ? COLORS.lime : "none"} />
+                </button>
+                <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+              </div>
             </div>
           </Card>
         ))}
