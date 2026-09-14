@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -60,6 +60,36 @@ function macrosForOz(per100g, oz) {
 }
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+function mondayOf(dateISO) {
+  const d = new Date(dateISO + "T00:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function computeConsistency(logs) {
+  const weekKeys = new Set((logs || []).map((l) => mondayOf(l.date)));
+  let cursor = mondayOf(todayISO());
+  if (!weekKeys.has(cursor)) {
+    const d = new Date(cursor + "T00:00:00");
+    d.setDate(d.getDate() - 7);
+    cursor = d.toISOString().slice(0, 10);
+  }
+  let streak = 0;
+  while (weekKeys.has(cursor)) {
+    streak++;
+    const d = new Date(cursor + "T00:00:00");
+    d.setDate(d.getDate() - 7);
+    cursor = d.toISOString().slice(0, 10);
+  }
+  const total = (logs || []).length;
+  const milestones = [1, 5, 10, 25, 50, 100, 200];
+  const achieved = milestones.filter((m) => total >= m).pop() || 0;
+  const next = milestones.find((m) => total < m) || null;
+  return { weeklyStreak: streak, totalWorkouts: total, achievedMilestone: achieved, nextMilestone: next };
+}
 
 // ---------- seed data ----------
 const SEED_EXERCISES = [
@@ -732,9 +762,44 @@ function ClientsTab({ clients, onRefresh }) {
                 </div>
               </div>
             )}
+            <IntakeViewer clientId={c.id} />
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IntakeViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [intake, setIntake] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (!open && !intake) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setIntake(data.intake || false);
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide intake info" : "View intake info"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        !intake ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>This client hasn't filled out their intake form yet.</div> :
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.6 }}>
+          <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
+          <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1175,8 +1240,59 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
+function IntakeForm({ data, onSave, onClose }) {
+  const existing = data.intake || {};
+  const [form, setForm] = useState({
+    goal: existing.goal || "",
+    experience: existing.experience || "Beginner",
+    equipment: existing.equipment || "",
+    injuries: existing.injuries || "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await onSave({ ...data, intake: { ...form, submittedAt: new Date().toISOString() } });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }}>
+      <div style={{ background: COLORS.bg, borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", border: `1px solid ${COLORS.border}`, borderBottom: "none" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Tell us about you</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 18 }}>This helps your trainer build the right program for you.</div>
+
+        <Field label="What's your main goal?">
+          <input style={inputStyle} placeholder="e.g. lose weight, build strength, tone up" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} />
+        </Field>
+        <Field label="Training experience">
+          <select style={inputStyle} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })}>
+            <option>Beginner</option>
+            <option>Intermediate</option>
+            <option>Advanced</option>
+          </select>
+        </Field>
+        <Field label="What equipment do you have access to?">
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. full gym, home dumbbells only, bodyweight only" value={form.equipment} onChange={(e) => setForm({ ...form, equipment: e.target.value })} />
+        </Field>
+        <Field label="Any injuries or limitations we should know about?">
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. lower back sensitivity, knee issue — or 'none'" value={form.injuries} onChange={(e) => setForm({ ...form, injuries: e.target.value })} />
+        </Field>
+
+        <Btn onClick={save} disabled={saving} style={{ width: "100%", marginTop: 4 }}>{saving ? "Saving…" : "Save"}</Btn>
+      </div>
+    </div>
+  );
+}
+
 function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [tab, setTab] = useState("today");
+  const [showIntake, setShowIntake] = useState(false);
+  const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
     { id: "library", label: "Library", icon: Dumbbell },
@@ -1184,6 +1300,13 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
   ];
+
+  useEffect(() => {
+    if (!data.intake && !autoPromptShown) {
+      setShowIntake(true);
+      setAutoPromptShown(true);
+    }
+  }, [data.intake, autoPromptShown]);
 
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
@@ -1196,16 +1319,23 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
             <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
           </div>
         </div>
-        <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
+        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <button onClick={() => setShowIntake(true)} title="Edit your profile" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><FileText size={18} /></button>
+          <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
-        {tab === "progress" && <ProgressTab data={data} exercises={exercises} />}
+        {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
       </div>
+
+      {showIntake && (
+        <IntakeForm data={data} onSave={onSave} onClose={() => setShowIntake(false)} />
+      )}
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
         {tabs.map((t) => (
@@ -1582,7 +1712,7 @@ function ClientLibrary({ exercises }) {
   );
 }
 
-function ProgressTab({ data, exercises }) {
+function ProgressTab({ data, exercises, clientId, onSave }) {
   const exIdsLogged = useMemo(() => {
     const ids = new Set();
     data.logs.forEach((l) => l.entries.forEach((e) => {
@@ -1614,36 +1744,63 @@ function ProgressTab({ data, exercises }) {
     return points.sort((a, b) => a.raw.localeCompare(b.raw));
   }, [data, selectedExId]);
 
-  if (exIdsLogged.length === 0) {
-    return <Card style={{ textAlign: "center", color: COLORS.textMuted }}>Log a few workouts on the Today tab and your progress will show up here.</Card>;
-  }
-
   const exName = (id) => exercises.find((e) => e.id === id)?.name || "Exercise";
+  const consistency = computeConsistency(data.logs);
 
   return (
     <div>
-      <select style={{ ...inputStyle, marginBottom: 18 }} value={selectedExId} onChange={(e) => setSelectedExId(e.target.value)}>
-        {exIdsLogged.map((id) => <option key={id} value={id}>{exName(id)}</option>)}
-      </select>
-
-      <Card>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Top set weight over time</div>
-        {chartData.length < 2 ? (
-          <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Log at least 2 sessions with weight to see a trend line.</div>
-        ) : (
-          <div style={{ width: "100%", height: 220 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData}>
-                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
-                <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={11} />
-                <YAxis stroke={COLORS.textMuted} fontSize={11} />
-                <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
-                <Line type="monotone" dataKey="weight" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
-              </LineChart>
-            </ResponsiveContainer>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: consistency.nextMilestone ? 12 : 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Flame size={18} color={COLORS.accent} />
+            <div>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{consistency.weeklyStreak} week{consistency.weeklyStreak === 1 ? "" : "s"}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>current streak</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{consistency.totalWorkouts}</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>workouts logged</div>
+          </div>
+        </div>
+        {consistency.nextMilestone && (
+          <div>
+            <div style={{ height: 6, background: COLORS.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${Math.min(100, Math.round((consistency.totalWorkouts / consistency.nextMilestone) * 100))}%`, height: "100%", background: COLORS.lime, borderRadius: 4 }} />
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>{consistency.nextMilestone - consistency.totalWorkouts} workouts to your next milestone ({consistency.nextMilestone})</div>
           </div>
         )}
       </Card>
+
+      {exIdsLogged.length === 0 ? (
+        <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>Log a few workouts on the Today tab and your strength progress will show up here.</Card>
+      ) : (
+        <>
+          <select style={{ ...inputStyle, marginBottom: 18 }} value={selectedExId} onChange={(e) => setSelectedExId(e.target.value)}>
+            {exIdsLogged.map((id) => <option key={id} value={id}>{exName(id)}</option>)}
+          </select>
+
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Top set weight over time</div>
+            {chartData.length < 2 ? (
+              <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Log at least 2 sessions with weight to see a trend line.</div>
+            ) : (
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData}>
+                    <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={11} />
+                    <YAxis stroke={COLORS.textMuted} fontSize={11} />
+                    <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="weight" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   );
 }
