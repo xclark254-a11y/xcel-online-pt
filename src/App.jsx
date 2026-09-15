@@ -806,6 +806,204 @@ const TEMPLATE_PROGRAMS = [
       },
     ],
   },
+  {
+    id: "tpl-8wk-fatloss-p1",
+    name: "8-Week Fat Loss — Phase 1: Foundation (Wks 1-2)",
+    level: "All levels",
+    description: "Part 1 of 4 in the 8-Week Fat Loss Program. Moderate weight, higher reps, building work capacity and technique. Assign Phase 2 after 2 weeks.",
+    days: [
+      {
+        name: "Day 1 — Upper Body Strength",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 3, reps: "12" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "12" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 3, reps: "12" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "12" },
+          { exerciseName: "Lateral Raise", sets: 2, reps: "15" },
+          { exerciseName: "Tricep Pushdown", sets: 2, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body Strength",
+        exercises: [
+          { exerciseName: "Goblet Squat", sets: 3, reps: "12" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "12" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Leg Press", sets: 3, reps: "12" },
+          { exerciseName: "Standing Calf Raise", sets: 2, reps: "15" },
+          { exerciseName: "Plank", sets: 2, reps: "30 sec" },
+        ],
+      },
+      {
+        name: "Day 3 — Full Body Metabolic Circuit",
+        exercises: [
+          { exerciseName: "Kettlebell Swing", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Push-Up", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Goblet Squat", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Barbell Row", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Mountain Climber", sets: 3, reps: "45 sec work / 15 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes & Core",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 3, reps: "12" },
+          { exerciseName: "Single-Leg RDL", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "12" },
+          { exerciseName: "Face Pull", sets: 3, reps: "15" },
+          { exerciseName: "Russian Twist", sets: 2, reps: "15" },
+          { exerciseName: "Dead Bug", sets: 2, reps: "15" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-8wk-fatloss-p2",
+    name: "8-Week Fat Loss — Phase 2: Build (Wks 3-4)",
+    level: "All levels",
+    description: "Part 2 of 4. Slightly heavier, more supersets, shorter rest. Assign after Phase 1, then move to Phase 3 after these 2 weeks.",
+    days: [
+      {
+        name: "Day 1 — Upper Body Push/Pull Superset",
+        exercises: [
+          { exerciseName: "Incline Dumbbell Press", sets: 4, reps: "10" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "10" },
+          { exerciseName: "Arnold Press", sets: 3, reps: "10" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10" },
+          { exerciseName: "Cable Fly", sets: 3, reps: "12" },
+          { exerciseName: "Face Pull", sets: 3, reps: "12" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body Strength",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "10" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "10" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Leg Extension", sets: 3, reps: "15" },
+          { exerciseName: "Seated Leg Curl", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Full Body Metabolic Circuit",
+        exercises: [
+          { exerciseName: "Kettlebell Clean and Press", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Box Jump", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Single-Arm Dumbbell Row", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Battle Ropes", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Side Plank", sets: 4, reps: "40 sec work / 20 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes & Core Focus",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 4, reps: "10" },
+          { exerciseName: "Cable Kickback", sets: 3, reps: "12 per leg" },
+          { exerciseName: "Curtsy Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Hanging Knee Raise", sets: 3, reps: "12" },
+          { exerciseName: "Side Plank", sets: 3, reps: "30 sec" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-8wk-fatloss-p3",
+    name: "8-Week Fat Loss — Phase 3: Intensify (Wks 5-6)",
+    level: "All levels",
+    description: "Part 3 of 4. Heavier strength work and harder conditioning. Assign after Phase 2, then move to Phase 4 (the final phase) after these 2 weeks.",
+    days: [
+      {
+        name: "Day 1 — Upper Body Strength + Finisher",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "8" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "8" },
+          { exerciseName: "Dumbbell Shoulder Press", sets: 3, reps: "10" },
+          { exerciseName: "Push-Up", sets: 3, reps: "to failure" },
+          { exerciseName: "Band Pull-Apart", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body Strength",
+        exercises: [
+          { exerciseName: "Front Squat", sets: 4, reps: "8" },
+          { exerciseName: "Sumo Deadlift", sets: 3, reps: "8" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "12 per leg" },
+          { exerciseName: "Leg Press", sets: 3, reps: "15" },
+          { exerciseName: "Standing Calf Raise", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Full Body Metabolic Circuit",
+        exercises: [
+          { exerciseName: "Kettlebell Swing", sets: 5, reps: "40 sec work / 15 sec rest" },
+          { exerciseName: "Slam Ball Slam", sets: 5, reps: "40 sec work / 15 sec rest" },
+          { exerciseName: "Single-Arm Dumbbell Row", sets: 5, reps: "40 sec work / 15 sec rest" },
+          { exerciseName: "Box Jump", sets: 5, reps: "40 sec work / 15 sec rest" },
+          { exerciseName: "Battle Ropes", sets: 5, reps: "40 sec work / 15 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes & Core",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 4, reps: "8" },
+          { exerciseName: "Single-Leg RDL", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Cable Pull-Through", sets: 3, reps: "12" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "12" },
+          { exerciseName: "Plank", sets: 3, reps: "30 sec" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-8wk-fatloss-p4",
+    name: "8-Week Fat Loss — Phase 4: Peak (Wks 7-8)",
+    level: "All levels",
+    description: "Part 4 of 4, the final phase. Have them try to beat their Week 1 numbers on the main lifts — a great way to show them how far they've come.",
+    days: [
+      {
+        name: "Day 1 — Upper Body Strength Test",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "6-8" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "6-8" },
+          { exerciseName: "Incline Dumbbell Press", sets: 3, reps: "10" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "10" },
+          { exerciseName: "Lateral Raise", sets: 3, reps: "15" },
+          { exerciseName: "Face Pull", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body Strength Test",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "6-8" },
+          { exerciseName: "Romanian Deadlift", sets: 4, reps: "8" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10" },
+          { exerciseName: "Seated Leg Curl", sets: 3, reps: "10" },
+        ],
+      },
+      {
+        name: "Day 3 — Metabolic Finisher Challenge",
+        exercises: [
+          { exerciseName: "Kettlebell Clean and Press", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Slam Ball Slam", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Single-Arm Dumbbell Row", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Box Jump", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Mountain Climber", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Battle Ropes", sets: 6, reps: "45 sec work / 15 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes, Core & Retest",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 4, reps: "8" },
+          { exerciseName: "Curtsy Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Cable Kickback", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Single-Leg RDL", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Plank", sets: 3, reps: "max time" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20" },
+        ],
+      },
+    ],
+  },
 ];
 
 const MOBILITY_ROUTINES = [
