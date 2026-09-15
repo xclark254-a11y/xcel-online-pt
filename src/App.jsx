@@ -899,7 +899,7 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
   };
 
   return (
-    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", flexDirection: "column", alignItems: "center" }}>
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
@@ -968,7 +968,7 @@ function InviteSignup({ invite, onComplete }) {
   };
 
   return (
-    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", flexDirection: "column", alignItems: "center" }}>
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 30 }}>
@@ -1004,7 +1004,7 @@ function TrainerGate({ hasPin, onSetPin, onUnlock, onBack }) {
   const [error, setError] = useState("");
 
   return (
-    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", justifyContent: "center" }}>
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", justifyContent: "center" }}>
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 340 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: 6, marginBottom: 20, cursor: "pointer", fontSize: 13, padding: 0 }}>
@@ -1062,7 +1062,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column" }}>
       <style>{FONT_STACK}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Trainer Console</div>
         <button onClick={onExit} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <LogOut size={15} /> Exit
@@ -1933,12 +1933,12 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
       <style>{FONT_STACK}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT · v1.1</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -1959,7 +1959,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         <IntakeForm data={data} onSave={onSave} onClose={() => setShowIntake(false)} />
       )}
 
-      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg, paddingBottom: "env(safe-area-inset-bottom)" }}>
         {tabs.map((t) => (
           <button
             key={t.id}
