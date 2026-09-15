@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -931,6 +931,75 @@ function Card({ children, style = {}, onClick }) {
 }
 
 // ============================================================
+export function PullToRefresh({ children }) {
+  const [pullDistance, setPullDistance] = useState(0);
+  const startYRef = useRef(0);
+  const pullingRef = useRef(false);
+  const distanceRef = useRef(0);
+
+  useEffect(() => {
+    const handleTouchStart = (e) => {
+      if (window.scrollY === 0) {
+        startYRef.current = e.touches[0].clientY;
+        pullingRef.current = true;
+      } else {
+        pullingRef.current = false;
+      }
+    };
+    const handleTouchMove = (e) => {
+      if (!pullingRef.current) return;
+      const diff = e.touches[0].clientY - startYRef.current;
+      if (diff > 0 && window.scrollY === 0) {
+        const d = Math.min(diff * 0.5, 90);
+        distanceRef.current = d;
+        setPullDistance(d);
+      }
+    };
+    const handleTouchEnd = () => {
+      if (distanceRef.current > 60) {
+        window.location.reload();
+      } else {
+        distanceRef.current = 0;
+        setPullDistance(0);
+      }
+      pullingRef.current = false;
+    };
+    document.addEventListener("touchstart", handleTouchStart, { passive: true });
+    document.addEventListener("touchmove", handleTouchMove, { passive: true });
+    document.addEventListener("touchend", handleTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []);
+
+  return (
+    <>
+      {pullDistance > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            top: "calc(8px + env(safe-area-inset-top))",
+            left: 0,
+            right: 0,
+            display: "flex",
+            justifyContent: "center",
+            zIndex: 200,
+            pointerEvents: "none",
+            opacity: Math.min(pullDistance / 60, 1),
+          }}
+        >
+          <div style={{ background: "#181B20", borderRadius: 999, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #2A2F38" }}>
+            <RefreshCw size={16} color="#FF4E24" style={{ transform: `rotate(${pullDistance * 4}deg)` }} />
+          </div>
+        </div>
+      )}
+      {children}
+    </>
+  );
+}
+
 export default function App() {
   const [phase, setPhase] = useState("loading"); // loading | login | client | trainerGate | trainer
   const [clients, setClients] = useState([]);
