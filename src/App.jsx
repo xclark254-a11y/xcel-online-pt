@@ -22,6 +22,10 @@ function exerciseSearchUrl(name) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " exercise proper form")}`;
 }
 
+function mobilitySearchUrl(name) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " stretch mobility how to")}`;
+}
+
 const OZ_TO_G = 28.3495;
 
 async function searchFoods(query) {
@@ -3052,6 +3056,14 @@ function ClientMobility({ data, onSave }) {
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{ex.name}</div>
                       <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{ex.prescription}</div>
                       <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{ex.instructions}</div>
+                      <a
+                        href={mobilitySearchUrl(ex.name)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 11, color: COLORS.accent, marginTop: 8, display: "inline-block" }}
+                      >
+                        Watch example ↗
+                      </a>
                     </div>
                   ))}
                 </div>
