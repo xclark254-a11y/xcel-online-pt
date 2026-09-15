@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -24,6 +24,29 @@ function exerciseSearchUrl(name) {
 
 function mobilitySearchUrl(name) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " stretch mobility how to")}`;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function sendPush(subscriptions, title, body, url) {
+  const subs = (subscriptions || []).filter((s) => s && s.endpoint);
+  if (subs.length === 0) return;
+  try {
+    await fetch("/api/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriptions: subs, title, body, url }),
+    });
+  } catch (e) {
+    // best-effort — a failed push shouldn't block the message/post from saving
+  }
 }
 
 const OZ_TO_G = 28.3495;
@@ -1198,7 +1221,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
         {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
-        {tab === "community" && <CommunityBoard isTrainer />}
+        {tab === "community" && <CommunityBoard isTrainer clients={clients} />}
       </div>
     </div>
   );
@@ -2014,6 +2037,7 @@ function MessagesTab({ clients }) {
     const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), date: new Date().toISOString() }];
     await sSet(`client:${selectedClientId}`, { ...data, messages: next });
     setMessages(next);
+    sendPush([data.pushSubscription], "New message from your trainer", text.trim().slice(0, 120));
     setText("");
   };
 
@@ -2052,7 +2076,7 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
-function CommunityBoard({ isTrainer, authorName }) {
+function CommunityBoard({ isTrainer, authorName, clients }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -2085,6 +2109,14 @@ function CommunityBoard({ isTrainer, authorName }) {
     setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
     setText("");
     setSending(false);
+
+    if (isTrainer && clients?.length) {
+      const subs = await Promise.all(clients.map(async (c) => {
+        const d = await sGet(`client:${c.id}`, {});
+        return d.pushSubscription;
+      }));
+      sendPush(subs, "Announcement from your trainer", newPost.text.slice(0, 120));
+    }
   };
 
   const removePost = async (id) => {
@@ -2238,6 +2270,34 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     }
   }, [data.intake, autoPromptShown]);
 
+  const [notifBusy, setNotifBusy] = useState(false);
+
+  const enableNotifications = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      alert("Push notifications aren't supported in this browser. On iPhone, add this app to your Home Screen first, then try again from there.");
+      return;
+    }
+    setNotifBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotifBusy(false);
+        return;
+      }
+      const { VAPID_PUBLIC_KEY } = await import("./pushConfig.js");
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      }));
+      await onSave({ ...data, pushSubscription: sub.toJSON() });
+    } catch (e) {
+      console.error(e);
+    }
+    setNotifBusy(false);
+  };
+
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
       <style>{FONT_STACK}</style>
@@ -2250,6 +2310,9 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <button onClick={enableNotifications} disabled={notifBusy} title={data.pushSubscription ? "Notifications on" : "Enable notifications"} style={{ background: "none", border: "none", color: data.pushSubscription ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}>
+            {data.pushSubscription ? <Bell size={18} /> : <BellOff size={18} />}
+          </button>
           <button onClick={() => setShowIntake(true)} title="Edit your profile" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><FileText size={18} /></button>
           <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
         </div>
