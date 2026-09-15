@@ -1874,6 +1874,7 @@ function MobilityTab({ clients }) {
 
 function NutritionTargetsTab({ clients }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [targets, setTargets] = useState({ calories: "", protein: "", carbs: "", fat: "" });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
