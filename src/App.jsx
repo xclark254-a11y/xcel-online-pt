@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -2397,11 +2397,12 @@ function MessagesTab({ clients }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [videoFileId, setVideoFileId] = useState(null);
-  const [videoUploading, setVideoUploading] = useState(false);
-  const [videoError, setVideoError] = useState("");
-  const videoInputRef = useRef(null);
+  const [mediaUrl, setMediaUrl] = useState(null);
+  const [mediaFileId, setMediaFileId] = useState(null);
+  const [mediaType, setMediaType] = useState(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const mediaInputRef = useRef(null);
 
   useEffect(() => {
     if (!selectedClientId) return;
@@ -2411,38 +2412,44 @@ function MessagesTab({ clients }) {
     })();
   }, [selectedClientId]);
 
-  const handleVideoSelect = async (e) => {
+  const handleMediaSelect = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setVideoUploading(true);
-    setVideoError("");
+    const isVideo = file.type.startsWith("video/");
+    setMediaUploading(true);
+    setMediaError("");
     try {
-      const { url, fileId } = await uploadVideo(file, selectedClientId, "message-videos");
-      setVideoUrl(url);
-      setVideoFileId(fileId);
+      const { url, fileId } = isVideo
+        ? await uploadVideo(file, selectedClientId, "message-media")
+        : await uploadImage(file, selectedClientId, "message-media");
+      setMediaUrl(url);
+      setMediaFileId(fileId);
+      setMediaType(isVideo ? "video" : "image");
     } catch (err) {
-      setVideoError(err.message || "Video upload failed.");
+      setMediaError(err.message || "Upload failed.");
     }
-    setVideoUploading(false);
+    setMediaUploading(false);
   };
 
-  const cancelVideo = () => {
-    deleteImageKitFile(videoFileId);
-    setVideoUrl(null);
-    setVideoFileId(null);
+  const cancelMedia = () => {
+    deleteImageKitFile(mediaFileId);
+    setMediaUrl(null);
+    setMediaFileId(null);
+    setMediaType(null);
   };
 
   const send = async () => {
-    if (!text.trim() && !videoUrl) return;
+    if (!text.trim() && !mediaUrl) return;
     const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
-    const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), videoUrl: videoUrl || null, videoFileId: videoFileId || null, date: new Date().toISOString() }];
+    const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), mediaUrl: mediaUrl || null, mediaFileId: mediaFileId || null, mediaType: mediaType || null, date: new Date().toISOString() }];
     await sSet(`client:${selectedClientId}`, { ...data, messages: next });
     setMessages(next);
-    sendPush([data.pushSubscription], "New message from your trainer", text.trim() ? text.trim().slice(0, 120) : "Sent a video");
+    sendPush([data.pushSubscription], "New message from your trainer", text.trim() ? text.trim().slice(0, 120) : mediaType === "video" ? "Sent a video" : "Sent a photo");
     setText("");
-    setVideoUrl(null);
-    setVideoFileId(null);
+    setMediaUrl(null);
+    setMediaFileId(null);
+    setMediaType(null);
   };
 
   const removeMessage = async (id) => {
@@ -2451,7 +2458,7 @@ function MessagesTab({ clients }) {
     const next = (data.messages || []).filter((m) => m.id !== id);
     await sSet(`client:${selectedClientId}`, { ...data, messages: next });
     setMessages(next);
-    deleteImageKitFile(target?.videoFileId);
+    deleteImageKitFile(target?.mediaFileId);
   };
 
   if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first.</div>;
@@ -2475,25 +2482,32 @@ function MessagesTab({ clients }) {
             fontSize: 13,
           }}>
             {m.text && <div>{m.text}</div>}
-            {m.videoUrl && (
-              <video controls src={m.videoUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            {m.mediaUrl && m.mediaType === "video" && (
+              <video controls src={m.mediaUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            )}
+            {m.mediaUrl && m.mediaType !== "video" && (
+              <img src={m.mediaUrl} alt="" style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 8 }}>
               <div style={{ fontSize: 10, color: COLORS.textMuted }}>{new Date(m.date).toLocaleString()}</div>
-              {m.videoUrl && (
-                <button onClick={() => removeMessage(m.id)} title="Delete video to free up storage" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
+              {m.mediaUrl && (
+                <button onClick={() => removeMessage(m.id)} title="Delete to free up storage" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
               )}
             </div>
           </div>
         ))}
       </div>
 
-      {videoError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{videoError}</div>}
+      {mediaError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{mediaError}</div>}
 
-      {videoUrl && (
+      {mediaUrl && (
         <div style={{ position: "relative", marginBottom: 10, maxWidth: 160 }}>
-          <video src={videoUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
-          <button onClick={cancelVideo} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          {mediaType === "video" ? (
+            <video src={mediaUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          ) : (
+            <img src={mediaUrl} alt="" style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          )}
+          <button onClick={cancelMedia} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             <X size={12} />
           </button>
         </div>
@@ -2501,10 +2515,10 @@ function MessagesTab({ clients }) {
 
       <div style={{ display: "flex", gap: 8 }}>
         <input style={inputStyle} placeholder="Write a note to your client…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-        <Btn variant="subtle" onClick={() => videoInputRef.current?.click()} disabled={videoUploading}>
-          {videoUploading ? "…" : <Video size={15} />}
+        <Btn variant="subtle" onClick={() => mediaInputRef.current?.click()} disabled={mediaUploading}>
+          {mediaUploading ? "…" : <Paperclip size={15} />}
         </Btn>
-        <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleVideoSelect} />
+        <input ref={mediaInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handleMediaSelect} />
         <Btn onClick={send}><Send size={15} /></Btn>
       </div>
     </div>
@@ -4123,7 +4137,7 @@ function ProgressPhotos({ data, onSave, clientId }) {
         <Btn variant="subtle" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => fileInputRef.current?.click()} disabled={uploading}>
           {uploading ? "Uploading…" : <><Plus size={14} /> Add photo</>}
         </Btn>
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
       </div>
 
       {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{error}</div>}
@@ -4285,54 +4299,61 @@ function BodyStats({ data, onSave }) {
 
 function ClientMessages({ data, onSave, client }) {
   const [text, setText] = useState("");
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [videoFileId, setVideoFileId] = useState(null);
-  const [videoUploading, setVideoUploading] = useState(false);
-  const [videoError, setVideoError] = useState("");
-  const videoInputRef = useRef(null);
+  const [mediaUrl, setMediaUrl] = useState(null);
+  const [mediaFileId, setMediaFileId] = useState(null);
+  const [mediaType, setMediaType] = useState(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const mediaInputRef = useRef(null);
   const messages = data.messages || [];
 
-  const handleVideoSelect = async (e) => {
+  const handleMediaSelect = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setVideoUploading(true);
-    setVideoError("");
+    const isVideo = file.type.startsWith("video/");
+    setMediaUploading(true);
+    setMediaError("");
     try {
-      const { url, fileId } = await uploadVideo(file, client?.id || "client", "message-videos");
-      setVideoUrl(url);
-      setVideoFileId(fileId);
+      const { url, fileId } = isVideo
+        ? await uploadVideo(file, client?.id || "client", "message-media")
+        : await uploadImage(file, client?.id || "client", "message-media");
+      setMediaUrl(url);
+      setMediaFileId(fileId);
+      setMediaType(isVideo ? "video" : "image");
     } catch (err) {
-      setVideoError(err.message || "Video upload failed.");
+      setMediaError(err.message || "Upload failed.");
     }
-    setVideoUploading(false);
+    setMediaUploading(false);
   };
 
-  const cancelVideo = () => {
-    deleteImageKitFile(videoFileId);
-    setVideoUrl(null);
-    setVideoFileId(null);
+  const cancelMedia = () => {
+    deleteImageKitFile(mediaFileId);
+    setMediaUrl(null);
+    setMediaFileId(null);
+    setMediaType(null);
   };
 
   const send = async () => {
-    if (!text.trim() && !videoUrl) return;
-    const next = [...messages, { id: uid(), from: "client", text: text.trim(), videoUrl: videoUrl || null, videoFileId: videoFileId || null, date: new Date().toISOString() }];
+    if (!text.trim() && !mediaUrl) return;
+    const next = [...messages, { id: uid(), from: "client", text: text.trim(), mediaUrl: mediaUrl || null, mediaFileId: mediaFileId || null, mediaType: mediaType || null, date: new Date().toISOString() }];
     await onSave({ ...data, messages: next });
     fetch("https://ntfy.sh/xcel-pt-messages2026", {
       method: "POST",
-      body: text.trim() ? `${client?.name || "A client"}: ${text.trim()}` : `${client?.name || "A client"} sent a video`,
+      body: text.trim() ? `${client?.name || "A client"}: ${text.trim()}` : `${client?.name || "A client"} sent a ${mediaType === "video" ? "video" : "photo"}`,
       headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" },
     }).catch(() => {});
     setText("");
-    setVideoUrl(null);
-    setVideoFileId(null);
+    setMediaUrl(null);
+    setMediaFileId(null);
+    setMediaType(null);
   };
 
   const removeMessage = async (id) => {
     const target = messages.find((m) => m.id === id);
     const next = messages.filter((m) => m.id !== id);
     await onSave({ ...data, messages: next });
-    deleteImageKitFile(target?.videoFileId);
+    deleteImageKitFile(target?.mediaFileId);
   };
 
   return (
@@ -4350,38 +4371,45 @@ function ClientMessages({ data, onSave, client }) {
             fontSize: 13,
           }}>
             {m.text && <div>{m.text}</div>}
-            {m.videoUrl && (
-              <video controls src={m.videoUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            {m.mediaUrl && m.mediaType === "video" && (
+              <video controls src={m.mediaUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            )}
+            {m.mediaUrl && m.mediaType !== "video" && (
+              <img src={m.mediaUrl} alt="" style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 8 }}>
               <div style={{ fontSize: 10, color: COLORS.textMuted }}>{new Date(m.date).toLocaleString()}</div>
-              {m.videoUrl && m.from === "client" && (
-                <button onClick={() => removeMessage(m.id)} title="Delete video" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
+              {m.mediaUrl && m.from === "client" && (
+                <button onClick={() => removeMessage(m.id)} title="Delete to free up storage" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
               )}
             </div>
           </div>
         ))}
       </div>
 
-      {videoError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{videoError}</div>}
+      {mediaError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{mediaError}</div>}
 
-      {videoUrl && (
+      {mediaUrl && (
         <div style={{ position: "relative", marginBottom: 10, maxWidth: 160 }}>
-          <video src={videoUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
-          <button onClick={cancelVideo} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          {mediaType === "video" ? (
+            <video src={mediaUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          ) : (
+            <img src={mediaUrl} alt="" style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          )}
+          <button onClick={cancelMedia} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             <X size={12} />
           </button>
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Got a form check question? Attach a short video (20MB max) and ask below.</div>
+      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Got a form check question? Attach a photo or short video (20MB max) and ask below.</div>
 
       <div style={{ display: "flex", gap: 8 }}>
         <input style={inputStyle} placeholder="Message your trainer…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-        <Btn variant="subtle" onClick={() => videoInputRef.current?.click()} disabled={videoUploading}>
-          {videoUploading ? "…" : <Video size={15} />}
+        <Btn variant="subtle" onClick={() => mediaInputRef.current?.click()} disabled={mediaUploading}>
+          {mediaUploading ? "…" : <Paperclip size={15} />}
         </Btn>
-        <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleVideoSelect} />
+        <input ref={mediaInputRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handleMediaSelect} />
         <Btn onClick={send}><Send size={15} /></Btn>
       </div>
     </div>
