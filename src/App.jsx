@@ -726,6 +726,7 @@ export default function App() {
   const [trainerPin, setTrainerPin] = useState(null);
   const [currentClient, setCurrentClient] = useState(null);
   const [clientData, setClientData] = useState(null); // {program, logs, messages}
+  const [pendingInvite, setPendingInvite] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -746,9 +747,35 @@ export default function App() {
       setExercises(ex);
       setClients(cl);
       setTrainerPin(pin);
+
+      const inviteCode = new URLSearchParams(window.location.search).get("invite");
+      if (inviteCode) {
+        const invites = await sGet("app:invites", []);
+        const invite = invites.find((i) => i.code === inviteCode && i.status !== "claimed");
+        if (invite) {
+          setPendingInvite(invite);
+          setPhase("invite");
+          return;
+        }
+      }
       setPhase("login");
     })();
   }, []);
+
+  const completeInvite = async ({ name, pin }) => {
+    const newClient = { id: uid(), name, pin };
+    const list = await sGet("app:clients", []);
+    await sSet("app:clients", [...list, newClient]);
+    setClients([...list, newClient]);
+
+    const invites = await sGet("app:invites", []);
+    await sSet("app:invites", invites.map((i) => (i.id === pendingInvite.id ? { ...i, status: "claimed" } : i)));
+
+    window.history.replaceState({}, "", window.location.pathname);
+    setCurrentClient(newClient);
+    await loadClientData(newClient.id);
+    setPhase("client");
+  };
 
   const loadClientData = async (clientId) => {
     const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
@@ -776,6 +803,10 @@ export default function App() {
         <div style={{ color: COLORS.textMuted, fontFamily: "'Space Grotesk', sans-serif" }}>Loading…</div>
       </div>
     );
+  }
+
+  if (phase === "invite" && pendingInvite) {
+    return <InviteSignup invite={pendingInvite} onComplete={completeInvite} />;
   }
 
   if (phase === "login") {
@@ -918,6 +949,55 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
 }
 
 // ============================================================
+// ============================================================
+function InviteSignup({ invite, onComplete }) {
+  const [name, setName] = useState(invite.name || "");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return setError("Enter your name.");
+    if (pin.length < 3) return setError("Choose a PIN with at least 3 digits.");
+    if (pin !== confirmPin) return setError("PINs don't match.");
+    setError("");
+    setSaving(true);
+    await onComplete({ name: name.trim(), pin });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <style>{FONT_STACK}</style>
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 72, height: 72, borderRadius: 16, overflow: "hidden", marginBottom: 14 }}>
+            <img src="/logo-mark.png" alt="Xcel Online PT" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>
+            Welcome to Xcel Online PT
+          </h1>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>Your trainer invited you — set up your account below.</p>
+        </div>
+        <Card>
+          <Field label="Your name">
+            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </Field>
+          <Field label="Choose a PIN">
+            <input type="password" inputMode="numeric" style={inputStyle} value={pin} onChange={(e) => setPin(e.target.value)} />
+          </Field>
+          <Field label="Confirm PIN">
+            <input type="password" inputMode="numeric" style={inputStyle} value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)} />
+          </Field>
+          {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          <Btn onClick={submit} disabled={saving} style={{ width: "100%" }}>{saving ? "Setting up…" : "Create my account"}</Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function TrainerGate({ hasPin, onSetPin, onUnlock, onBack }) {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -1027,6 +1107,102 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   );
 }
 
+function InviteByEmail({ onSent }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const send = async () => {
+    if (!name.trim() || !email.trim()) return;
+    setSending(true);
+    setStatus("");
+    try {
+      const code = uid() + uid();
+      const invites = await sGet("app:invites", []);
+      const invite = { id: uid(), code, name: name.trim(), email: email.trim(), status: "pending", createdAt: new Date().toISOString() };
+      await sSet("app:invites", [...invites, invite]);
+
+      const link = `${window.location.origin}${window.location.pathname}?invite=${code}`;
+      const { EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY } = await import("./emailConfig.js");
+
+      if (!EMAILJS_SERVICE_ID || EMAILJS_SERVICE_ID.startsWith("YOUR_")) {
+        setStatus(`Invite saved! Email sending isn't set up yet — share this link with them yourself: ${link}`);
+      } else {
+        const emailjs = (await import("@emailjs/browser")).default;
+        await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          { to_name: name.trim(), to_email: email.trim(), invite_link: link },
+          { publicKey: EMAILJS_PUBLIC_KEY }
+        );
+        setStatus(`Invite emailed to ${email.trim()}!`);
+      }
+      setName("");
+      setEmail("");
+      onSent();
+    } catch (e) {
+      setStatus("Invite was saved, but sending the email failed — check your EmailJS setup or share the link manually.");
+    }
+    setSending(false);
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Invite a new client by email</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <Field label="Name"><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        </div>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Field label="Email"><input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        </div>
+      </div>
+      <Btn onClick={send} disabled={sending || !name.trim() || !email.trim()}>{sending ? "Sending…" : "Send invite"}</Btn>
+      {status && <div style={{ fontSize: 11, color: status.startsWith("Invite emailed") ? COLORS.lime : COLORS.textMuted, marginTop: 8, wordBreak: "break-all" }}>{status}</div>}
+    </Card>
+  );
+}
+
+function PendingInvites({ refreshKey }) {
+  const [invites, setInvites] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const list = await sGet("app:invites", []);
+      setInvites(list.filter((i) => i.status !== "claimed").sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      setLoading(false);
+    })();
+  }, [refreshKey]);
+
+  const cancelInvite = async (id) => {
+    const list = await sGet("app:invites", []);
+    await sSet("app:invites", list.filter((i) => i.id !== id));
+    setInvites(invites.filter((i) => i.id !== id));
+  };
+
+  if (loading || invites.length === 0) return null;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Pending invites</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {invites.map((i) => (
+          <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>{i.email}</div>
+            </div>
+            <button onClick={() => cancelInvite(i.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function ClientsTab({ clients, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -1056,6 +1232,8 @@ function ClientsTab({ clients, onRefresh }) {
     onRefresh();
   };
 
+  const [inviteRefresh, setInviteRefresh] = useState(0);
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -1079,6 +1257,9 @@ function ClientsTab({ clients, onRefresh }) {
         </Card>
       )}
 
+      <InviteByEmail onSent={() => setInviteRefresh((n) => n + 1)} />
+      <PendingInvites refreshKey={inviteRefresh} />
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {clients.map((c) => (
           <Card key={c.id} style={{ padding: 14 }}>
@@ -1097,6 +1278,7 @@ function ClientsTab({ clients, onRefresh }) {
               </div>
             )}
             <IntakeViewer clientId={c.id} />
+            <NutritionViewer clientId={c.id} />
           </Card>
         ))}
       </div>
@@ -1148,6 +1330,74 @@ function IntakeViewer({ clientId }) {
     </div>
   );
 }
+
+function NutritionViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [nutrition, setNutrition] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (!open && nutrition === null) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setNutrition(data.nutrition || {});
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  const targets = nutrition?.targets || {};
+  const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
+  const logs = useMemo(
+    () => [...(nutrition?.logs || [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7),
+    [nutrition]
+  );
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide nutrition log" : "View nutrition log"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>
+            <strong style={{ color: COLORS.text }}>Daily targets:</strong>{" "}
+            {hasTargets ? `${targets.calories || "—"} cal · ${targets.protein || "—"}g P · ${targets.carbs || "—"}g C · ${targets.fat || "—"}g F` : "Not set yet"}
+          </div>
+          {logs.length === 0 ? (
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>This client hasn't logged any food yet.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {logs.map((l) => {
+                const totals = (l.entries || []).reduce((acc, e) => ({
+                  calories: acc.calories + (e.calories || 0),
+                  protein: acc.protein + (e.protein || 0),
+                  carbs: acc.carbs + (e.carbs || 0),
+                  fat: acc.fat + (e.fat || 0),
+                }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+                return (
+                  <div key={l.date} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, marginBottom: 4 }}>
+                      <span>{fmtDate(l.date)}</span>
+                      <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>
+                        {totals.calories} cal · {totals.protein}g P · {totals.carbs}g C · {totals.fat}g F
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>
+                      {(l.entries || []).map((e) => e.name).join(", ") || "No items logged"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
