@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -1473,6 +1473,11 @@ function ClientsTab({ clients, onRefresh }) {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: COLORS.textMuted }}>PIN: {c.pin}</div>
+                  {c.stripeLink && (
+                    <a href={c.stripeLink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: COLORS.lime, display: "inline-flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                      <CreditCard size={11} /> Payment link set
+                    </a>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {c.status === "paused" ? (
@@ -1676,16 +1681,22 @@ function ProgressPhotosViewer({ clientId }) {
 function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
   const [pin, setPin] = useState(client.pin);
+  const [stripeLink, setStripeLink] = useState(client.stripeLink || "");
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 120 }}>
-        <Field label="Name"><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+    <div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 120 }}>
+          <Field label="Name"><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        </div>
+        <div style={{ width: 100 }}>
+          <Field label="PIN"><input style={inputStyle} value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
+        </div>
       </div>
-      <div style={{ width: 100 }}>
-        <Field label="PIN"><input style={inputStyle} value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
-      </div>
+      <Field label="Stripe Payment Link (optional)">
+        <input style={inputStyle} placeholder="https://buy.stripe.com/..." value={stripeLink} onChange={(e) => setStripeLink(e.target.value)} />
+      </Field>
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <Btn onClick={() => onSave({ name, pin })}><Check size={15} /></Btn>
+        <Btn onClick={() => onSave({ name, pin, stripeLink: stripeLink.trim() })}><Check size={15} /></Btn>
         <Btn variant="ghost" onClick={onCancel}><X size={15} /></Btn>
       </div>
     </div>
@@ -2598,6 +2609,11 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          {client.stripeLink && (
+            <a href={client.stripeLink} target="_blank" rel="noreferrer" title="Manage membership" style={{ color: COLORS.textMuted, display: "flex" }}>
+              <CreditCard size={18} />
+            </a>
+          )}
           <button onClick={enableNotifications} disabled={notifBusy} title={data.pushSubscription ? "Notifications on" : "Enable notifications"} style={{ background: "none", border: "none", color: data.pushSubscription ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}>
             {data.pushSubscription ? <Bell size={18} /> : <BellOff size={18} />}
           </button>
