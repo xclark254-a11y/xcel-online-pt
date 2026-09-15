@@ -151,6 +151,8 @@ async function lookupBarcode(code) {
   }
 }
 
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 const BURN_ACTIVITY_OPTIONS = ["Workout", "Walk", "Run", "Treadmill", "Bike", "Swim", "Sports", "Hike", "Other"];
 
 const DAILY_QUOTES = [
@@ -2268,9 +2270,10 @@ function ProgramsTab({ clients, exercises }) {
     await sSet(`client:${selectedClientId}`, { ...data, program: nextProgram });
   };
 
-  const addDay = () => persist({ days: [...program.days, { id: uid(), name: `Day ${program.days.length + 1}`, exercises: [] }] });
+  const addDay = () => persist({ days: [...program.days, { id: uid(), name: `Day ${program.days.length + 1}`, dayOfWeek: "", exercises: [] }] });
   const removeDay = (dayId) => persist({ days: program.days.filter((d) => d.id !== dayId) });
   const renameDay = (dayId, name) => persist({ days: program.days.map((d) => (d.id === dayId ? { ...d, name } : d)) });
+  const setDayOfWeek = (dayId, dayOfWeek) => persist({ days: program.days.map((d) => (d.id === dayId ? { ...d, dayOfWeek } : d)) });
   const addExerciseToDay = (dayId, exerciseId) => {
     if (!exerciseId) return;
     persist({
@@ -2300,9 +2303,15 @@ function ProgramsTab({ clients, exercises }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {program.days.map((day) => (
             <Card key={day.id}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
                 <input style={{ ...inputStyle, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", maxWidth: 200 }} value={day.name} onChange={(e) => renameDay(day.id, e.target.value)} />
-                <button onClick={() => removeDay(day.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={16} /></button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <select style={{ ...inputStyle, width: 130 }} value={day.dayOfWeek || ""} onChange={(e) => setDayOfWeek(day.id, e.target.value)}>
+                    <option value="">No fixed day</option>
+                    {WEEK_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <button onClick={() => removeDay(day.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={16} /></button>
+                </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
@@ -2850,7 +2859,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
-        {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
+        {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
         {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
@@ -3030,7 +3039,91 @@ function FreeformHistory({ logs, exercises, onDelete }) {
   );
 }
 
-function TodayTab({ data, exercises, onSave }) {
+function WeekCalendar({ days, scheduleOverrides, dayIdx, onSelectDay, onMoveDay }) {
+  const [movingDayId, setMovingDayId] = useState(null);
+  const todayDow = WEEK_DAYS[new Date().getDay()];
+
+  const effectiveDow = (day) => scheduleOverrides[day.id] || day.dayOfWeek || null;
+
+  const withIdx = days.map((d, i) => ({ ...d, idx: i }));
+  const scheduled = WEEK_DAYS.map((dow) => ({
+    dow,
+    dayItems: withIdx.filter((d) => effectiveDow(d) === dow),
+  }));
+  const flexible = withIdx.filter((d) => !effectiveDow(d));
+  const activeDay = days[dayIdx];
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: flexible.length ? 12 : 0 }}>
+        {scheduled.map(({ dow, dayItems }) => (
+          <div key={dow} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: dow === todayDow ? COLORS.accent : COLORS.textMuted, fontWeight: 600, marginBottom: 6 }}>{dow}</div>
+            {dayItems.length === 0 ? (
+              <div style={{ height: 46, borderRadius: 8, border: `1px dashed ${COLORS.border}` }} />
+            ) : (
+              dayItems.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => onSelectDay(d.idx)}
+                  style={{
+                    width: "100%", minHeight: 46, borderRadius: 8, marginBottom: 4, padding: "6px 4px",
+                    border: `1px solid ${d.idx === dayIdx ? COLORS.accent : COLORS.border}`,
+                    background: d.idx === dayIdx ? COLORS.accentDim : COLORS.surfaceAlt,
+                    color: d.idx === dayIdx ? COLORS.accent : COLORS.text,
+                    fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif",
+                    display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.2,
+                  }}
+                >
+                  {d.name}
+                </button>
+              ))
+            )}
+          </div>
+        ))}
+      </div>
+
+      {flexible.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Flexible (no fixed day)</div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto" }}>
+            {flexible.map((d) => (
+              <button key={d.id} onClick={() => onSelectDay(d.idx)} style={{
+                padding: "8px 14px", borderRadius: 20, border: `1px solid ${d.idx === dayIdx ? COLORS.accent : COLORS.border}`,
+                background: d.idx === dayIdx ? COLORS.accentDim : "transparent", color: d.idx === dayIdx ? COLORS.accent : COLORS.textMuted,
+                fontSize: 12, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", cursor: "pointer", whiteSpace: "nowrap",
+              }}>{d.name}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeDay && (
+        <button onClick={() => setMovingDayId(activeDay.id)} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0, marginTop: 12 }}>
+          Can't do {activeDay.name} today? Move it →
+        </button>
+      )}
+
+      {movingDayId && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 55 }} onClick={() => setMovingDayId(null)}>
+          <div style={{ background: COLORS.bg, borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 420, border: `1px solid ${COLORS.border}`, borderBottom: "none" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Move to a different day</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10 }}>
+              {WEEK_DAYS.map((dow) => (
+                <Btn key={dow} variant="subtle" style={{ fontSize: 12, padding: "10px 4px" }} onClick={() => { onMoveDay(movingDayId, dow); setMovingDayId(null); }}>
+                  {dow}
+                </Btn>
+              ))}
+            </div>
+            <Btn variant="ghost" style={{ width: "100%" }} onClick={() => { onMoveDay(movingDayId, null); setMovingDayId(null); }}>Make it flexible (no fixed day)</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TodayTab({ data, exercises, onSave, clientName }) {
   const days = data.program?.days || [];
   const [dayIdx, setDayIdx] = useState(0);
   const day = days[dayIdx];
@@ -3042,9 +3135,15 @@ function TodayTab({ data, exercises, onSave }) {
     setEntries(todayLog?.entries || []);
   }, [dayIdx, todayLog]);
 
+  const notifyTrainer = async (workoutLabel) => {
+    const trainerSub = await sGet("app:trainerPushSubscription", null);
+    if (trainerSub) sendPush([trainerSub], "Workout logged", `${clientName} just logged: ${workoutLabel}`);
+  };
+
   const saveFreeform = async (log) => {
     await onSave({ ...data, logs: [...data.logs, log] });
     setShowFreeform(false);
+    notifyTrainer(log.dayName || "Custom workout");
   };
 
   const deleteFreeform = async (id) => {
@@ -3086,24 +3185,28 @@ function TodayTab({ data, exercises, onSave }) {
     const logs = data.logs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
     logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
     await onSave({ ...data, logs });
+    notifyTrainer(day.name);
   };
 
   return (
     <div>
-      {days.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
-          {days.map((d, i) => (
-            <button key={d.id} onClick={() => setDayIdx(i)} style={{
-              padding: "8px 14px", borderRadius: 20, border: `1px solid ${i === dayIdx ? COLORS.accent : COLORS.border}`,
-              background: i === dayIdx ? COLORS.accentDim : "transparent", color: i === dayIdx ? COLORS.accent : COLORS.textMuted,
-              fontSize: 12, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", cursor: "pointer", whiteSpace: "nowrap",
-            }}>{d.name}</button>
-          ))}
-        </div>
-      )}
+      <WeekCalendar
+        days={days}
+        scheduleOverrides={data.scheduleOverrides || {}}
+        dayIdx={dayIdx}
+        onSelectDay={setDayIdx}
+        onMoveDay={async (dayId, newDow) => {
+          const nextOverrides = { ...(data.scheduleOverrides || {}) };
+          if (newDow) nextOverrides[dayId] = newDow;
+          else delete nextOverrides[dayId];
+          await onSave({ ...data, scheduleOverrides: nextOverrides });
+        }}
+      />
 
       <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, marginBottom: 4 }}>{day.name}</div>
-      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>{fmtDate(todayISO())} · {day.exercises.length} exercises</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        {(data.scheduleOverrides?.[day.id] || day.dayOfWeek) ? `${data.scheduleOverrides?.[day.id] || day.dayOfWeek} · ` : ""}{day.exercises.length} exercises
+      </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {day.exercises.map((ex) => {
