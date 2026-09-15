@@ -826,9 +826,9 @@ const inputStyle = {
   boxSizing: "border-box",
 };
 
-function Card({ children, style = {} }) {
+function Card({ children, style = {}, onClick }) {
   return (
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 18, ...style }}>
+    <div onClick={onClick} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 18, ...style }}>
       {children}
     </div>
   );
