@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -1147,6 +1147,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
     { id: "programs", label: "Programs", icon: CalendarDays },
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
+    { id: "community", label: "Community", icon: Users },
   ];
 
   return (
@@ -1193,6 +1194,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
         {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
+        {tab === "community" && <CommunityBoard isTrainer />}
       </div>
     </div>
   );
@@ -2046,6 +2048,95 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
+function CommunityBoard({ isTrainer, authorName }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const list = await sGet("app:communityPosts", []);
+    setPosts([...list].sort((a, b) => b.date.localeCompare(a.date)));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const post = async () => {
+    if (!text.trim()) return;
+    setSending(true);
+    const list = await sGet("app:communityPosts", []);
+    const newPost = {
+      id: uid(),
+      authorName: isTrainer ? "Your trainer" : authorName,
+      authorType: isTrainer ? "trainer" : "client",
+      text: text.trim(),
+      date: new Date().toISOString(),
+    };
+    const next = [...list, newPost].slice(-300);
+    await sSet("app:communityPosts", next);
+    setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
+    setText("");
+    setSending(false);
+  };
+
+  const removePost = async (id) => {
+    const list = await sGet("app:communityPosts", []);
+    const next = list.filter((p) => p.id !== id);
+    await sSet("app:communityPosts", next);
+    setPosts(next.sort((a, b) => b.date.localeCompare(a.date)));
+  };
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <Field label={isTrainer ? "Post an announcement to everyone" : "Share an update, milestone, or question"}>
+          <textarea
+            style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+            placeholder={isTrainer ? "e.g. Gym closed this Friday for the holiday…" : "e.g. Hit a new PR on squats today! 💪"}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </Field>
+        <Btn onClick={post} disabled={sending || !text.trim()}>
+          {isTrainer ? <><Megaphone size={15} /> Post announcement</> : <><Send size={15} /> Post</>}
+        </Btn>
+      </Card>
+
+      {loading ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading…</div>
+      ) : posts.length === 0 ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No posts yet — be the first to share something!</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {posts.map((p) => (
+            <Card
+              key={p.id}
+              style={p.authorType === "trainer" ? { borderColor: COLORS.accent, background: COLORS.accentDim } : {}}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {p.authorType === "trainer" && <Megaphone size={14} color={COLORS.accent} />}
+                  <span style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{p.authorName}</span>
+                </div>
+                {isTrainer && (
+                  <button onClick={() => removePost(p.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={13} /></button>
+                )}
+              </div>
+              <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{p.text}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 8 }}>{new Date(p.date).toLocaleString()}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function IntakeForm({ data, onSave, onClose }) {
   const existing = data.intake || {};
   const existingTotalIn = Number(existing.heightIn) || 0;
@@ -2133,6 +2224,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
+    { id: "community", label: "Community", icon: Users },
   ];
 
   useEffect(() => {
@@ -2166,6 +2258,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
+        {tab === "community" && <CommunityBoard isTrainer={false} authorName={client.name} />}
       </div>
 
       {showIntake && (
