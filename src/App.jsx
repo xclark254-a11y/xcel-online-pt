@@ -1387,6 +1387,11 @@ function NutritionViewer({ clientId }) {
                     <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>
                       {(l.entries || []).map((e) => e.name).join(", ") || "No items logged"}
                     </div>
+                    {(l.burned || []).length > 0 && (
+                      <div style={{ fontSize: 11, color: COLORS.lime, marginTop: 4 }}>
+                        Burned: {l.burned.reduce((s, b) => s + (Number(b.calories) || 0), 0)} cal ({l.burned.map((b) => b.label).join(", ")}) · Net: {totals.calories - l.burned.reduce((s, b) => s + (Number(b.calories) || 0), 0)}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2324,6 +2329,12 @@ function ClientNutrition({ data, onSave }) {
     return () => clearTimeout(t);
   }, [query]);
 
+  const burnedEntries = todayLog?.burned || [];
+  const totalBurned = burnedEntries.reduce((sum, b) => sum + (Number(b.calories) || 0), 0);
+
+  const [burnLabel, setBurnLabel] = useState("");
+  const [burnCals, setBurnCals] = useState("");
+
   const totals = entries.reduce((acc, e) => ({
     calories: acc.calories + (e.calories || 0),
     protein: acc.protein + (e.protein || 0),
@@ -2333,8 +2344,26 @@ function ClientNutrition({ data, onSave }) {
 
   const saveEntries = async (nextEntries) => {
     const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
-    logs.push({ date: todayISO(), entries: nextEntries });
+    logs.push({ date: todayISO(), entries: nextEntries, burned: burnedEntries });
     await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const saveBurned = async (nextBurned) => {
+    const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
+    logs.push({ date: todayISO(), entries, burned: nextBurned });
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const addBurned = async () => {
+    if (!burnCals || Number(burnCals) <= 0) return;
+    const entry = { id: uid(), label: burnLabel.trim() || "Workout", calories: Number(burnCals) };
+    await saveBurned([...burnedEntries, entry]);
+    setBurnLabel("");
+    setBurnCals("");
+  };
+
+  const removeBurned = async (id) => {
+    await saveBurned(burnedEntries.filter((b) => b.id !== id));
   };
 
   const addFromSearch = async () => {
@@ -2443,8 +2472,55 @@ function ClientNutrition({ data, onSave }) {
           <Meter label="Protein" value={totals.protein} goal={Number(targets.protein) || 0} unit="g" />
           <Meter label="Carbs" value={totals.carbs} goal={Number(targets.carbs) || 0} unit="g" />
           <Meter label="Fat" value={totals.fat} goal={Number(targets.fat) || 0} unit="g" />
+          {totalBurned > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>
+                <span>Calories burned (workouts)</span>
+                <span>{totalBurned}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+                <span>Net calories</span>
+                <span>{totals.calories - totalBurned}{targets.calories ? ` / ${targets.calories}` : ""}</span>
+              </div>
+            </div>
+          )}
         </Card>
       )}
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Calories burned</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Check your watch or gym equipment after a workout and log it here.</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: burnedEntries.length ? 12 : 0 }}>
+          <input
+            style={{ ...inputStyle, flex: 1, minWidth: 120 }}
+            placeholder="Label (e.g. Leg day)"
+            value={burnLabel}
+            onChange={(e) => setBurnLabel(e.target.value)}
+          />
+          <input
+            type="number"
+            style={{ ...inputStyle, width: 100 }}
+            placeholder="Calories"
+            value={burnCals}
+            onChange={(e) => setBurnCals(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addBurned()}
+          />
+          <Btn onClick={addBurned}><Plus size={14} /> Add</Btn>
+        </div>
+        {burnedEntries.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {burnedEntries.map((b) => (
+              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                <div style={{ fontSize: 13 }}>{b.label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 12, color: COLORS.textMuted }}>{b.calories} cal</span>
+                  <button onClick={() => removeBurned(b.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={13} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {hasTargets && (
         <Card style={{ marginBottom: 16 }}>
