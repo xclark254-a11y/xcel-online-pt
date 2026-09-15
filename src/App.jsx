@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -67,6 +67,8 @@ async function lookupBarcode(code) {
     return null;
   }
 }
+
+const BURN_ACTIVITY_OPTIONS = ["Workout", "Walk", "Run", "Treadmill", "Bike", "Swim", "Sports", "Hike", "Other"];
 
 const MEAL_OPTIONS = {
   breakfast: [
@@ -635,6 +637,93 @@ const TEMPLATE_PROGRAMS = [
   },
 ];
 
+const MOBILITY_ROUTINES = [
+  {
+    id: "mob-hip-flexors",
+    name: "Hip Flexor Mobility",
+    targetArea: "Hips",
+    description: "For tight hip flexors from sitting or heavy lower-body training.",
+    exercises: [
+      { id: uid(), name: "Kneeling Hip Flexor Stretch", instructions: "Half-kneeling, tuck your pelvis under and lean forward gently until you feel a stretch at the front of the hip on the back leg.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Couch Stretch", instructions: "Back shin against a couch or wall, back knee bent, front foot forward. Squeeze the glute on the back leg and lean upright.", prescription: "2 sets × 30-45 sec each side" },
+      { id: uid(), name: "World's Greatest Stretch", instructions: "From a lunge position, drop the back knee down, then rotate your torso and reach the same-side arm toward the ceiling.", prescription: "2 sets × 5 reps each side" },
+      { id: uid(), name: "Standing Quad Stretch", instructions: "Standing on one leg, pull the opposite heel toward your glutes, keeping knees close together.", prescription: "2 sets × 20-30 sec each side" },
+    ],
+  },
+  {
+    id: "mob-glutes",
+    name: "Glute Activation & Mobility",
+    targetArea: "Glutes",
+    description: "Wakes up underactive glutes and improves hip mobility.",
+    exercises: [
+      { id: uid(), name: "Glute Bridge", instructions: "Lie on your back, knees bent. Drive through your heels and squeeze your glutes at the top, pause, lower slowly.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Fire Hydrant", instructions: "On hands and knees, lift one bent knee out to the side, keeping the hips level.", prescription: "2 sets × 12 reps each side" },
+      { id: uid(), name: "Pigeon Pose Stretch", instructions: "Front shin angled in front of you, back leg extended behind. Fold forward gently over the front leg.", prescription: "2 sets × 30-45 sec each side" },
+      { id: uid(), name: "Banded Lateral Walk", instructions: "Band around the ankles or knees, sit into a slight squat and step sideways keeping tension on the band.", prescription: "2 sets × 15 steps each direction" },
+    ],
+  },
+  {
+    id: "mob-shoulders",
+    name: "Shoulder Mobility & Posture",
+    targetArea: "Shoulders",
+    description: "Opens up tight shoulders and supports better upper-body posture.",
+    exercises: [
+      { id: uid(), name: "Band Pull-Apart", instructions: "Hold a light band at shoulder height, arms extended. Pull it apart by squeezing your shoulder blades together.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Wall Slides", instructions: "Back against a wall, arms in a goalpost position touching the wall. Slide arms overhead while keeping contact with the wall.", prescription: "2 sets × 12 reps" },
+      { id: uid(), name: "Cross-Body Shoulder Stretch", instructions: "Pull one arm across your chest with the opposite hand, keeping the shoulder relaxed.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Thread the Needle", instructions: "On hands and knees, thread one arm under your body and rotate through the upper back.", prescription: "2 sets × 8 reps each side" },
+    ],
+  },
+  {
+    id: "mob-apt",
+    name: "Anterior Pelvic Tilt Correction",
+    targetArea: "Pelvis (forward tilt)",
+    description: "Targets the common pattern of tight hip flexors and low back paired with a weaker core and glutes.",
+    exercises: [
+      { id: uid(), name: "Kneeling Hip Flexor Stretch", instructions: "Half-kneeling, tuck your pelvis under and lean forward gently until you feel a stretch at the front of the hip on the back leg.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Dead Bug", instructions: "On your back, arms and legs up. Lower opposite arm and leg toward the floor while keeping your low back flat against the ground.", prescription: "3 sets × 10 reps each side" },
+      { id: uid(), name: "Glute Bridge", instructions: "Lie on your back, knees bent. Drive through your heels and squeeze your glutes at the top.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Posterior Pelvic Tilt Hold", instructions: "Lying on your back, flatten your low back into the floor by gently tucking your hips, and hold.", prescription: "2 sets × 20 sec hold" },
+    ],
+  },
+  {
+    id: "mob-ppt",
+    name: "Posterior Pelvic Tilt Correction",
+    targetArea: "Pelvis (backward tilt)",
+    description: "Targets a flattened lower back pattern, often paired with tight hamstrings and glutes.",
+    exercises: [
+      { id: uid(), name: "Standing Quad Stretch", instructions: "Standing on one leg, pull the opposite heel toward your glutes, keeping knees close together.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Hamstring Stretch", instructions: "Sitting or standing, hinge forward from the hips with a long spine until you feel a stretch behind the thigh.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Superman Hold", instructions: "Lying face down, lift your arms and legs slightly off the ground and hold, squeezing the lower back and glutes.", prescription: "3 sets × 10 sec hold" },
+      { id: uid(), name: "Cat-Cow", instructions: "On hands and knees, alternate between arching and rounding your back slowly with your breath.", prescription: "2 sets × 10 reps" },
+    ],
+  },
+  {
+    id: "mob-upper-back",
+    name: "Upper Back & Thoracic Mobility",
+    targetArea: "Upper back / posture",
+    description: "For rounded shoulders and stiffness from long hours at a desk.",
+    exercises: [
+      { id: uid(), name: "Thoracic Extension on Foam Roller", instructions: "Foam roller placed under your upper back, hands behind your head, gently arch back over the roller.", prescription: "2 sets × 10 reps" },
+      { id: uid(), name: "Wall Angels", instructions: "Back against a wall, arms in a goalpost position. Slide arms up and down while keeping contact with the wall.", prescription: "2 sets × 12 reps" },
+      { id: uid(), name: "Doorway Chest Stretch", instructions: "Forearm on a doorframe, step forward gently until you feel a stretch across the chest.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Prone Y-T-W Raises", instructions: "Lying face down, raise your arms into a Y, then a T, then a W shape, squeezing the upper back each time.", prescription: "2 sets × 10 reps each letter" },
+    ],
+  },
+  {
+    id: "mob-low-back-desk",
+    name: "Low Back Relief for Desk Sitters",
+    targetArea: "Low back",
+    description: "Gentle mobility and core work to ease stiffness from long periods of sitting.",
+    exercises: [
+      { id: uid(), name: "Cat-Cow", instructions: "On hands and knees, alternate between arching and rounding your back slowly with your breath.", prescription: "2 sets × 10 reps" },
+      { id: uid(), name: "Child's Pose", instructions: "Kneel and sit back onto your heels, reaching your arms forward and relaxing your low back.", prescription: "2 sets × 30-45 sec hold" },
+      { id: uid(), name: "Knee-to-Chest Stretch", instructions: "Lying on your back, pull one knee toward your chest, keeping the other leg extended or bent.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Bird Dog", instructions: "On hands and knees, extend one arm and the opposite leg while keeping your core braced and back flat.", prescription: "3 sets × 10 reps each side" },
+    ],
+  },
+];
+
 const FONT_STACK = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
 `;
@@ -1054,6 +1143,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
     { id: "clients", label: "Clients", icon: User },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "templates", label: "Templates", icon: Layers },
+    { id: "mobility", label: "Mobility", icon: Activity },
     { id: "programs", label: "Programs", icon: CalendarDays },
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
@@ -1099,6 +1189,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "clients" && <ClientsTab clients={clients} onRefresh={onRefreshClients} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
+        {tab === "mobility" && <MobilityTab clients={clients} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
         {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
@@ -1636,9 +1727,124 @@ function TemplatesTab({ clients, exercises }) {
   );
 }
 
+function MobilityTab({ clients }) {
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [assigned, setAssigned] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    (async () => {
+      setLoading(true);
+      const data = await sGet(`client:${selectedClientId}`, {});
+      setAssigned(data.mobility?.routines || []);
+      setLoading(false);
+    })();
+  }, [selectedClientId]);
+
+  const assignRoutine = async (routine) => {
+    if (assigned.some((r) => r.routineId === routine.id)) return;
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const nextRoutines = [...(data.mobility?.routines || []), { id: uid(), routineId: routine.id, name: routine.name, targetArea: routine.targetArea, exercises: routine.exercises }];
+    await sSet(`client:${selectedClientId}`, { ...data, mobility: { ...(data.mobility || {}), routines: nextRoutines } });
+    setAssigned(nextRoutines);
+    setStatus(`Assigned "${routine.name}"`);
+    setTimeout(() => setStatus(""), 2500);
+  };
+
+  const unassignRoutine = async (id) => {
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const nextRoutines = (data.mobility?.routines || []).filter((r) => r.id !== id);
+    await sSet(`client:${selectedClientId}`, { ...data, mobility: { ...(data.mobility || {}), routines: nextRoutines } });
+    setAssigned(nextRoutines);
+  };
+
+  if (clients.length === 0) {
+    return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign mobility work.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Mobility & flexibility routines</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        These stack alongside a client's regular program — assigning one adds it to their Mobility tab without touching their workouts.
+      </div>
+
+      <select style={{ ...inputStyle, maxWidth: 260, marginBottom: 16 }} value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
+        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {loading ? <div style={{ color: COLORS.textMuted }}>Loading…</div> : (
+        <>
+          {assigned.length > 0 && (
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Currently assigned</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {assigned.map((r) => (
+                  <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent }}>{r.targetArea}</div>
+                    </div>
+                    <button onClick={() => unassignRoutine(r.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {status && <div style={{ fontSize: 12, color: COLORS.lime, marginBottom: 12 }}>{status}</div>}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {MOBILITY_ROUTINES.map((r) => {
+              const isAssigned = assigned.some((a) => a.routineId === r.id);
+              return (
+                <Card key={r.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{r.targetArea}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{r.description}</div>
+                    </div>
+                    <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                      {expandedId === r.id ? "Hide" : "Preview"}
+                    </button>
+                  </div>
+
+                  {expandedId === r.id && (
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {r.exercises.map((ex, i) => (
+                        <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{ex.name}</div>
+                          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{ex.prescription}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <Btn
+                    style={{ marginTop: 14, padding: "8px 12px", fontSize: 12 }}
+                    variant={isAssigned ? "ghost" : "primary"}
+                    disabled={isAssigned}
+                    onClick={() => assignRoutine(r)}
+                  >
+                    {isAssigned ? "Already assigned" : "Assign to client"}
+                  </Btn>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
 function NutritionTargetsTab({ clients }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
-  const [targets, setTargets] = useState({ calories: "", protein: "", carbs: "", fat: "" });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -1922,6 +2128,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
+    { id: "mobility", label: "Mobility", icon: Activity },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "progress", label: "Progress", icon: TrendingUp },
@@ -1954,6 +2161,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
+        {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
@@ -2332,7 +2540,8 @@ function ClientNutrition({ data, onSave }) {
   const burnedEntries = todayLog?.burned || [];
   const totalBurned = burnedEntries.reduce((sum, b) => sum + (Number(b.calories) || 0), 0);
 
-  const [burnLabel, setBurnLabel] = useState("");
+  const [burnActivity, setBurnActivity] = useState("Workout");
+  const [burnCustomLabel, setBurnCustomLabel] = useState("");
   const [burnCals, setBurnCals] = useState("");
 
   const totals = entries.reduce((acc, e) => ({
@@ -2356,9 +2565,11 @@ function ClientNutrition({ data, onSave }) {
 
   const addBurned = async () => {
     if (!burnCals || Number(burnCals) <= 0) return;
-    const entry = { id: uid(), label: burnLabel.trim() || "Workout", calories: Number(burnCals) };
+    const label = burnActivity === "Other" ? (burnCustomLabel.trim() || "Other") : burnActivity;
+    const entry = { id: uid(), label, calories: Number(burnCals) };
     await saveBurned([...burnedEntries, entry]);
-    setBurnLabel("");
+    setBurnActivity("Workout");
+    setBurnCustomLabel("");
     setBurnCals("");
   };
 
@@ -2490,13 +2701,14 @@ function ClientNutrition({ data, onSave }) {
       <Card style={{ marginBottom: 16 }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Calories burned</div>
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Check your watch or gym equipment after a workout and log it here.</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: burnedEntries.length ? 12 : 0 }}>
-          <input
-            style={{ ...inputStyle, flex: 1, minWidth: 120 }}
-            placeholder="Label (e.g. Leg day)"
-            value={burnLabel}
-            onChange={(e) => setBurnLabel(e.target.value)}
-          />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <select
+            style={{ ...inputStyle, flex: 1, minWidth: 110 }}
+            value={burnActivity}
+            onChange={(e) => setBurnActivity(e.target.value)}
+          >
+            {BURN_ACTIVITY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
           <input
             type="number"
             style={{ ...inputStyle, width: 100 }}
@@ -2507,6 +2719,14 @@ function ClientNutrition({ data, onSave }) {
           />
           <Btn onClick={addBurned}><Plus size={14} /> Add</Btn>
         </div>
+        {burnActivity === "Other" && (
+          <input
+            style={{ ...inputStyle, marginBottom: 12 }}
+            placeholder="What was it?"
+            value={burnCustomLabel}
+            onChange={(e) => setBurnCustomLabel(e.target.value)}
+          />
+        )}
         {burnedEntries.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {burnedEntries.map((b) => (
@@ -2677,6 +2897,84 @@ function ClientNutrition({ data, onSave }) {
             </div>
           </Card>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientMobility({ data, onSave }) {
+  const routines = data.mobility?.routines || [];
+  const logs = data.mobility?.logs || [];
+  const [expandedId, setExpandedId] = useState(null);
+
+  const lastDoneFor = (routineId) => {
+    const done = logs.filter((l) => l.routineId === routineId).sort((a, b) => b.date.localeCompare(a.date));
+    return done[0]?.date || null;
+  };
+
+  const doneToday = (routineId) => logs.some((l) => l.routineId === routineId && l.date === todayISO());
+
+  const markDone = async (routineId) => {
+    if (doneToday(routineId)) return;
+    const nextLogs = [...logs, { id: uid(), date: todayISO(), routineId }];
+    await onSave({ ...data, mobility: { ...(data.mobility || {}), logs: nextLogs } });
+  };
+
+  if (routines.length === 0) {
+    return (
+      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
+        Your trainer hasn't assigned any mobility routines yet. Check back soon, or see a note in Messages.
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        A few minutes on these each day can go a long way — general mobility guidance, not physical therapy. Check with a doctor if pain persists.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {routines.map((r) => {
+          const done = doneToday(r.id);
+          const last = lastDoneFor(r.id);
+          return (
+            <Card key={r.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{r.name}</div>
+                  <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{r.targetArea}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>
+                    {last ? `Last done ${fmtDate(last)}` : "Not done yet"}
+                  </div>
+                </div>
+                <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                  {expandedId === r.id ? "Hide" : "View"}
+                </button>
+              </div>
+
+              {expandedId === r.id && (
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {r.exercises.map((ex) => (
+                    <div key={ex.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{ex.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{ex.prescription}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{ex.instructions}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Btn
+                style={{ marginTop: 14, width: "100%" }}
+                variant={done ? "ghost" : "primary"}
+                disabled={done}
+                onClick={() => markDone(r.id)}
+              >
+                {done ? <><Check size={15} /> Done today</> : "Mark today's session complete"}
+              </Btn>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
