@@ -11,5 +11,5 @@
 //
 // Until real values are entered here, the "Add photo" button will show
 // an error instead of uploading.
-export const IMAGEKIT_PUBLIC_KEY = "YOUR_IMAGEKIT_PUBLIC_KEY";
-export const IMAGEKIT_URL_ENDPOINT = "YOUR_IMAGEKIT_URL_ENDPOINT";
+export const IMAGEKIT_PUBLIC_KEY = "public_ZWlHbge3fSZs109Uwv2M1LDy2uw=";
+export const IMAGEKIT_URL_ENDPOINT = "https://ik.imagekit.io/xcelathleticspt";
