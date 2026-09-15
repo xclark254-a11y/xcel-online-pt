@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -20,6 +20,33 @@ function toYouTubeEmbed(url) {
 }
 function exerciseSearchUrl(name) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " exercise proper form")}`;
+}
+
+function mobilitySearchUrl(name) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent((name || "") + " stretch mobility how to")}`;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function sendPush(subscriptions, title, body, url) {
+  const subs = (subscriptions || []).filter((s) => s && s.endpoint);
+  if (subs.length === 0) return;
+  try {
+    await fetch("/api/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriptions: subs, title, body, url }),
+    });
+  } catch (e) {
+    // best-effort — a failed push shouldn't block the message/post from saving
+  }
 }
 
 const OZ_TO_G = 28.3495;
@@ -47,6 +74,28 @@ async function searchFoods(query) {
     return [];
   }
 }
+
+async function lookupBarcode(code) {
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.status !== 1 || !data.product) return null;
+    const n = data.product.nutriments || {};
+    const per100g = {
+      calories: n["energy-kcal_100g"] ?? n["energy-kcal"],
+      protein: n["proteins_100g"],
+      carbs: n["carbohydrates_100g"],
+      fat: n["fat_100g"],
+    };
+    if (per100g.calories === undefined || per100g.calories === null) return null;
+    return { name: data.product.product_name || data.product.generic_name || "Scanned item", per100g };
+  } catch (e) {
+    return null;
+  }
+}
+
+const BURN_ACTIVITY_OPTIONS = ["Workout", "Walk", "Run", "Treadmill", "Bike", "Swim", "Sports", "Hike", "Other"];
 
 const MEAL_OPTIONS = {
   breakfast: [
@@ -615,6 +664,93 @@ const TEMPLATE_PROGRAMS = [
   },
 ];
 
+const MOBILITY_ROUTINES = [
+  {
+    id: "mob-hip-flexors",
+    name: "Hip Flexor Mobility",
+    targetArea: "Hips",
+    description: "For tight hip flexors from sitting or heavy lower-body training.",
+    exercises: [
+      { id: uid(), name: "Kneeling Hip Flexor Stretch", instructions: "Half-kneeling, tuck your pelvis under and lean forward gently until you feel a stretch at the front of the hip on the back leg.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Couch Stretch", instructions: "Back shin against a couch or wall, back knee bent, front foot forward. Squeeze the glute on the back leg and lean upright.", prescription: "2 sets × 30-45 sec each side" },
+      { id: uid(), name: "World's Greatest Stretch", instructions: "From a lunge position, drop the back knee down, then rotate your torso and reach the same-side arm toward the ceiling.", prescription: "2 sets × 5 reps each side" },
+      { id: uid(), name: "Standing Quad Stretch", instructions: "Standing on one leg, pull the opposite heel toward your glutes, keeping knees close together.", prescription: "2 sets × 20-30 sec each side" },
+    ],
+  },
+  {
+    id: "mob-glutes",
+    name: "Glute Activation & Mobility",
+    targetArea: "Glutes",
+    description: "Wakes up underactive glutes and improves hip mobility.",
+    exercises: [
+      { id: uid(), name: "Glute Bridge", instructions: "Lie on your back, knees bent. Drive through your heels and squeeze your glutes at the top, pause, lower slowly.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Fire Hydrant", instructions: "On hands and knees, lift one bent knee out to the side, keeping the hips level.", prescription: "2 sets × 12 reps each side" },
+      { id: uid(), name: "Pigeon Pose Stretch", instructions: "Front shin angled in front of you, back leg extended behind. Fold forward gently over the front leg.", prescription: "2 sets × 30-45 sec each side" },
+      { id: uid(), name: "Banded Lateral Walk", instructions: "Band around the ankles or knees, sit into a slight squat and step sideways keeping tension on the band.", prescription: "2 sets × 15 steps each direction" },
+    ],
+  },
+  {
+    id: "mob-shoulders",
+    name: "Shoulder Mobility & Posture",
+    targetArea: "Shoulders",
+    description: "Opens up tight shoulders and supports better upper-body posture.",
+    exercises: [
+      { id: uid(), name: "Band Pull-Apart", instructions: "Hold a light band at shoulder height, arms extended. Pull it apart by squeezing your shoulder blades together.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Wall Slides", instructions: "Back against a wall, arms in a goalpost position touching the wall. Slide arms overhead while keeping contact with the wall.", prescription: "2 sets × 12 reps" },
+      { id: uid(), name: "Cross-Body Shoulder Stretch", instructions: "Pull one arm across your chest with the opposite hand, keeping the shoulder relaxed.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Thread the Needle", instructions: "On hands and knees, thread one arm under your body and rotate through the upper back.", prescription: "2 sets × 8 reps each side" },
+    ],
+  },
+  {
+    id: "mob-apt",
+    name: "Anterior Pelvic Tilt Correction",
+    targetArea: "Pelvis (forward tilt)",
+    description: "Targets the common pattern of tight hip flexors and low back paired with a weaker core and glutes.",
+    exercises: [
+      { id: uid(), name: "Kneeling Hip Flexor Stretch", instructions: "Half-kneeling, tuck your pelvis under and lean forward gently until you feel a stretch at the front of the hip on the back leg.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Dead Bug", instructions: "On your back, arms and legs up. Lower opposite arm and leg toward the floor while keeping your low back flat against the ground.", prescription: "3 sets × 10 reps each side" },
+      { id: uid(), name: "Glute Bridge", instructions: "Lie on your back, knees bent. Drive through your heels and squeeze your glutes at the top.", prescription: "3 sets × 15 reps" },
+      { id: uid(), name: "Posterior Pelvic Tilt Hold", instructions: "Lying on your back, flatten your low back into the floor by gently tucking your hips, and hold.", prescription: "2 sets × 20 sec hold" },
+    ],
+  },
+  {
+    id: "mob-ppt",
+    name: "Posterior Pelvic Tilt Correction",
+    targetArea: "Pelvis (backward tilt)",
+    description: "Targets a flattened lower back pattern, often paired with tight hamstrings and glutes.",
+    exercises: [
+      { id: uid(), name: "Standing Quad Stretch", instructions: "Standing on one leg, pull the opposite heel toward your glutes, keeping knees close together.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Hamstring Stretch", instructions: "Sitting or standing, hinge forward from the hips with a long spine until you feel a stretch behind the thigh.", prescription: "2 sets × 30 sec each side" },
+      { id: uid(), name: "Superman Hold", instructions: "Lying face down, lift your arms and legs slightly off the ground and hold, squeezing the lower back and glutes.", prescription: "3 sets × 10 sec hold" },
+      { id: uid(), name: "Cat-Cow", instructions: "On hands and knees, alternate between arching and rounding your back slowly with your breath.", prescription: "2 sets × 10 reps" },
+    ],
+  },
+  {
+    id: "mob-upper-back",
+    name: "Upper Back & Thoracic Mobility",
+    targetArea: "Upper back / posture",
+    description: "For rounded shoulders and stiffness from long hours at a desk.",
+    exercises: [
+      { id: uid(), name: "Thoracic Extension on Foam Roller", instructions: "Foam roller placed under your upper back, hands behind your head, gently arch back over the roller.", prescription: "2 sets × 10 reps" },
+      { id: uid(), name: "Wall Angels", instructions: "Back against a wall, arms in a goalpost position. Slide arms up and down while keeping contact with the wall.", prescription: "2 sets × 12 reps" },
+      { id: uid(), name: "Doorway Chest Stretch", instructions: "Forearm on a doorframe, step forward gently until you feel a stretch across the chest.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Prone Y-T-W Raises", instructions: "Lying face down, raise your arms into a Y, then a T, then a W shape, squeezing the upper back each time.", prescription: "2 sets × 10 reps each letter" },
+    ],
+  },
+  {
+    id: "mob-low-back-desk",
+    name: "Low Back Relief for Desk Sitters",
+    targetArea: "Low back",
+    description: "Gentle mobility and core work to ease stiffness from long periods of sitting.",
+    exercises: [
+      { id: uid(), name: "Cat-Cow", instructions: "On hands and knees, alternate between arching and rounding your back slowly with your breath.", prescription: "2 sets × 10 reps" },
+      { id: uid(), name: "Child's Pose", instructions: "Kneel and sit back onto your heels, reaching your arms forward and relaxing your low back.", prescription: "2 sets × 30-45 sec hold" },
+      { id: uid(), name: "Knee-to-Chest Stretch", instructions: "Lying on your back, pull one knee toward your chest, keeping the other leg extended or bent.", prescription: "2 sets × 20-30 sec each side" },
+      { id: uid(), name: "Bird Dog", instructions: "On hands and knees, extend one arm and the opposite leg while keeping your core braced and back flat.", prescription: "3 sets × 10 reps each side" },
+    ],
+  },
+];
+
 const FONT_STACK = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
 `;
@@ -706,6 +842,7 @@ export default function App() {
   const [trainerPin, setTrainerPin] = useState(null);
   const [currentClient, setCurrentClient] = useState(null);
   const [clientData, setClientData] = useState(null); // {program, logs, messages}
+  const [pendingInvite, setPendingInvite] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -726,9 +863,35 @@ export default function App() {
       setExercises(ex);
       setClients(cl);
       setTrainerPin(pin);
+
+      const inviteCode = new URLSearchParams(window.location.search).get("invite");
+      if (inviteCode) {
+        const invites = await sGet("app:invites", []);
+        const invite = invites.find((i) => i.code === inviteCode && i.status !== "claimed");
+        if (invite) {
+          setPendingInvite(invite);
+          setPhase("invite");
+          return;
+        }
+      }
       setPhase("login");
     })();
   }, []);
+
+  const completeInvite = async ({ name, pin }) => {
+    const newClient = { id: uid(), name, pin };
+    const list = await sGet("app:clients", []);
+    await sSet("app:clients", [...list, newClient]);
+    setClients([...list, newClient]);
+
+    const invites = await sGet("app:invites", []);
+    await sSet("app:invites", invites.map((i) => (i.id === pendingInvite.id ? { ...i, status: "claimed" } : i)));
+
+    window.history.replaceState({}, "", window.location.pathname);
+    setCurrentClient(newClient);
+    await loadClientData(newClient.id);
+    setPhase("client");
+  };
 
   const loadClientData = async (clientId) => {
     const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
@@ -756,6 +919,10 @@ export default function App() {
         <div style={{ color: COLORS.textMuted, fontFamily: "'Space Grotesk', sans-serif" }}>Loading…</div>
       </div>
     );
+  }
+
+  if (phase === "invite" && pendingInvite) {
+    return <InviteSignup invite={pendingInvite} onComplete={completeInvite} />;
   }
 
   if (phase === "login") {
@@ -848,7 +1015,7 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
   };
 
   return (
-    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", flexDirection: "column", alignItems: "center" }}>
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
@@ -898,13 +1065,62 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
 }
 
 // ============================================================
+// ============================================================
+function InviteSignup({ invite, onComplete }) {
+  const [name, setName] = useState(invite.name || "");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return setError("Enter your name.");
+    if (pin.length < 3) return setError("Choose a PIN with at least 3 digits.");
+    if (pin !== confirmPin) return setError("PINs don't match.");
+    setError("");
+    setSaving(true);
+    await onComplete({ name: name.trim(), pin });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <style>{FONT_STACK}</style>
+      <div style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 72, height: 72, borderRadius: 16, overflow: "hidden", marginBottom: 14 }}>
+            <img src="/logo-mark.png" alt="Xcel Online PT" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>
+            Welcome to Xcel Online PT
+          </h1>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>Your trainer invited you — set up your account below.</p>
+        </div>
+        <Card>
+          <Field label="Your name">
+            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </Field>
+          <Field label="Choose a PIN">
+            <input type="password" inputMode="numeric" style={inputStyle} value={pin} onChange={(e) => setPin(e.target.value)} />
+          </Field>
+          <Field label="Confirm PIN">
+            <input type="password" inputMode="numeric" style={inputStyle} value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)} />
+          </Field>
+          {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          <Btn onClick={submit} disabled={saving} style={{ width: "100%" }}>{saving ? "Setting up…" : "Create my account"}</Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function TrainerGate({ hasPin, onSetPin, onUnlock, onBack }) {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
 
   return (
-    <div style={{ ...pageBase, padding: "40px 20px", display: "flex", justifyContent: "center" }}>
+    <div style={{ ...pageBase, padding: "40px 20px", paddingTop: "calc(40px + env(safe-area-inset-top))", display: "flex", justifyContent: "center" }}>
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 340 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: 6, marginBottom: 20, cursor: "pointer", fontSize: 13, padding: 0 }}>
@@ -954,15 +1170,17 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
     { id: "clients", label: "Clients", icon: User },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "templates", label: "Templates", icon: Layers },
+    { id: "mobility", label: "Mobility", icon: Activity },
     { id: "programs", label: "Programs", icon: CalendarDays },
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
+    { id: "community", label: "Community", icon: Users },
   ];
 
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column" }}>
       <style>{FONT_STACK}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Trainer Console</div>
         <button onClick={onExit} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <LogOut size={15} /> Exit
@@ -999,11 +1217,109 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "clients" && <ClientsTab clients={clients} onRefresh={onRefreshClients} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
+        {tab === "mobility" && <MobilityTab clients={clients} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
         {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
+        {tab === "community" && <CommunityBoard isTrainer clients={clients} />}
       </div>
     </div>
+  );
+}
+
+function InviteByEmail({ onSent }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const send = async () => {
+    if (!name.trim() || !email.trim()) return;
+    setSending(true);
+    setStatus("");
+    try {
+      const code = uid() + uid();
+      const invites = await sGet("app:invites", []);
+      const invite = { id: uid(), code, name: name.trim(), email: email.trim(), status: "pending", createdAt: new Date().toISOString() };
+      await sSet("app:invites", [...invites, invite]);
+
+      const link = `${window.location.origin}${window.location.pathname}?invite=${code}`;
+      const { EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY } = await import("./emailConfig.js");
+
+      if (!EMAILJS_SERVICE_ID || EMAILJS_SERVICE_ID.startsWith("YOUR_")) {
+        setStatus(`Invite saved! Email sending isn't set up yet — share this link with them yourself: ${link}`);
+      } else {
+        const emailjs = (await import("@emailjs/browser")).default;
+        await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          { to_name: name.trim(), to_email: email.trim(), invite_link: link },
+          { publicKey: EMAILJS_PUBLIC_KEY }
+        );
+        setStatus(`Invite emailed to ${email.trim()}!`);
+      }
+      setName("");
+      setEmail("");
+      onSent();
+    } catch (e) {
+      setStatus("Invite was saved, but sending the email failed — check your EmailJS setup or share the link manually.");
+    }
+    setSending(false);
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Invite a new client by email</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <Field label="Name"><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        </div>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Field label="Email"><input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        </div>
+      </div>
+      <Btn onClick={send} disabled={sending || !name.trim() || !email.trim()}>{sending ? "Sending…" : "Send invite"}</Btn>
+      {status && <div style={{ fontSize: 11, color: status.startsWith("Invite emailed") ? COLORS.lime : COLORS.textMuted, marginTop: 8, wordBreak: "break-all" }}>{status}</div>}
+    </Card>
+  );
+}
+
+function PendingInvites({ refreshKey }) {
+  const [invites, setInvites] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const list = await sGet("app:invites", []);
+      setInvites(list.filter((i) => i.status !== "claimed").sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      setLoading(false);
+    })();
+  }, [refreshKey]);
+
+  const cancelInvite = async (id) => {
+    const list = await sGet("app:invites", []);
+    await sSet("app:invites", list.filter((i) => i.id !== id));
+    setInvites(invites.filter((i) => i.id !== id));
+  };
+
+  if (loading || invites.length === 0) return null;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Pending invites</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {invites.map((i) => (
+          <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>{i.email}</div>
+            </div>
+            <button onClick={() => cancelInvite(i.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -1036,6 +1352,8 @@ function ClientsTab({ clients, onRefresh }) {
     onRefresh();
   };
 
+  const [inviteRefresh, setInviteRefresh] = useState(0);
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -1059,6 +1377,9 @@ function ClientsTab({ clients, onRefresh }) {
         </Card>
       )}
 
+      <InviteByEmail onSent={() => setInviteRefresh((n) => n + 1)} />
+      <PendingInvites refreshKey={inviteRefresh} />
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {clients.map((c) => (
           <Card key={c.id} style={{ padding: 14 }}>
@@ -1077,6 +1398,7 @@ function ClientsTab({ clients, onRefresh }) {
               </div>
             )}
             <IntakeViewer clientId={c.id} />
+            <NutritionViewer clientId={c.id} />
           </Card>
         ))}
       </div>
@@ -1128,6 +1450,79 @@ function IntakeViewer({ clientId }) {
     </div>
   );
 }
+
+function NutritionViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [nutrition, setNutrition] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (!open && nutrition === null) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setNutrition(data.nutrition || {});
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  const targets = nutrition?.targets || {};
+  const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
+  const logs = useMemo(
+    () => [...(nutrition?.logs || [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7),
+    [nutrition]
+  );
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide nutrition log" : "View nutrition log"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>
+            <strong style={{ color: COLORS.text }}>Daily targets:</strong>{" "}
+            {hasTargets ? `${targets.calories || "—"} cal · ${targets.protein || "—"}g P · ${targets.carbs || "—"}g C · ${targets.fat || "—"}g F` : "Not set yet"}
+          </div>
+          {logs.length === 0 ? (
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>This client hasn't logged any food yet.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {logs.map((l) => {
+                const totals = (l.entries || []).reduce((acc, e) => ({
+                  calories: acc.calories + (e.calories || 0),
+                  protein: acc.protein + (e.protein || 0),
+                  carbs: acc.carbs + (e.carbs || 0),
+                  fat: acc.fat + (e.fat || 0),
+                }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+                return (
+                  <div key={l.date} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, marginBottom: 4 }}>
+                      <span>{fmtDate(l.date)}</span>
+                      <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>
+                        {totals.calories} cal · {totals.protein}g P · {totals.carbs}g C · {totals.fat}g F
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>
+                      {(l.entries || []).map((e) => e.name).join(", ") || "No items logged"}
+                    </div>
+                    {(l.burned || []).length > 0 && (
+                      <div style={{ fontSize: 11, color: COLORS.lime, marginTop: 4 }}>
+                        Burned: {l.burned.reduce((s, b) => s + (Number(b.calories) || 0), 0)} cal ({l.burned.map((b) => b.label).join(", ")}) · Net: {totals.calories - l.burned.reduce((s, b) => s + (Number(b.calories) || 0), 0)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
@@ -1361,6 +1756,122 @@ function TemplatesTab({ clients, exercises }) {
   );
 }
 
+function MobilityTab({ clients }) {
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [assigned, setAssigned] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    (async () => {
+      setLoading(true);
+      const data = await sGet(`client:${selectedClientId}`, {});
+      setAssigned(data.mobility?.routines || []);
+      setLoading(false);
+    })();
+  }, [selectedClientId]);
+
+  const assignRoutine = async (routine) => {
+    if (assigned.some((r) => r.routineId === routine.id)) return;
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const nextRoutines = [...(data.mobility?.routines || []), { id: uid(), routineId: routine.id, name: routine.name, targetArea: routine.targetArea, exercises: routine.exercises }];
+    await sSet(`client:${selectedClientId}`, { ...data, mobility: { ...(data.mobility || {}), routines: nextRoutines } });
+    setAssigned(nextRoutines);
+    setStatus(`Assigned "${routine.name}"`);
+    setTimeout(() => setStatus(""), 2500);
+  };
+
+  const unassignRoutine = async (id) => {
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const nextRoutines = (data.mobility?.routines || []).filter((r) => r.id !== id);
+    await sSet(`client:${selectedClientId}`, { ...data, mobility: { ...(data.mobility || {}), routines: nextRoutines } });
+    setAssigned(nextRoutines);
+  };
+
+  if (clients.length === 0) {
+    return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign mobility work.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Mobility & flexibility routines</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        These stack alongside a client's regular program — assigning one adds it to their Mobility tab without touching their workouts.
+      </div>
+
+      <select style={{ ...inputStyle, maxWidth: 260, marginBottom: 16 }} value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
+        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {loading ? <div style={{ color: COLORS.textMuted }}>Loading…</div> : (
+        <>
+          {assigned.length > 0 && (
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Currently assigned</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {assigned.map((r) => (
+                  <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent }}>{r.targetArea}</div>
+                    </div>
+                    <button onClick={() => unassignRoutine(r.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {status && <div style={{ fontSize: 12, color: COLORS.lime, marginBottom: 12 }}>{status}</div>}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {MOBILITY_ROUTINES.map((r) => {
+              const isAssigned = assigned.some((a) => a.routineId === r.id);
+              return (
+                <Card key={r.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{r.targetArea}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{r.description}</div>
+                    </div>
+                    <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                      {expandedId === r.id ? "Hide" : "Preview"}
+                    </button>
+                  </div>
+
+                  {expandedId === r.id && (
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {r.exercises.map((ex, i) => (
+                        <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{ex.name}</div>
+                          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{ex.prescription}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <Btn
+                    style={{ marginTop: 14, padding: "8px 12px", fontSize: 12 }}
+                    variant={isAssigned ? "ghost" : "primary"}
+                    disabled={isAssigned}
+                    onClick={() => assignRoutine(r)}
+                  >
+                    {isAssigned ? "Already assigned" : "Assign to client"}
+                  </Btn>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
 function NutritionTargetsTab({ clients }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
   const [targets, setTargets] = useState({ calories: "", protein: "", carbs: "", fat: "" });
@@ -1527,6 +2038,7 @@ function MessagesTab({ clients }) {
     const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), date: new Date().toISOString() }];
     await sSet(`client:${selectedClientId}`, { ...data, messages: next });
     setMessages(next);
+    sendPush([data.pushSubscription], "New message from your trainer", text.trim().slice(0, 120));
     setText("");
   };
 
@@ -1565,6 +2077,103 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
+function CommunityBoard({ isTrainer, authorName, clients }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const list = await sGet("app:communityPosts", []);
+    setPosts([...list].sort((a, b) => b.date.localeCompare(a.date)));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const post = async () => {
+    if (!text.trim()) return;
+    setSending(true);
+    const list = await sGet("app:communityPosts", []);
+    const newPost = {
+      id: uid(),
+      authorName: isTrainer ? "Your trainer" : authorName,
+      authorType: isTrainer ? "trainer" : "client",
+      text: text.trim(),
+      date: new Date().toISOString(),
+    };
+    const next = [...list, newPost].slice(-300);
+    await sSet("app:communityPosts", next);
+    setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
+    setText("");
+    setSending(false);
+
+    if (isTrainer && clients?.length) {
+      const subs = await Promise.all(clients.map(async (c) => {
+        const d = await sGet(`client:${c.id}`, {});
+        return d.pushSubscription;
+      }));
+      sendPush(subs, "Announcement from your trainer", newPost.text.slice(0, 120));
+    }
+  };
+
+  const removePost = async (id) => {
+    const list = await sGet("app:communityPosts", []);
+    const next = list.filter((p) => p.id !== id);
+    await sSet("app:communityPosts", next);
+    setPosts(next.sort((a, b) => b.date.localeCompare(a.date)));
+  };
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <Field label={isTrainer ? "Post an announcement to everyone" : "Share an update, milestone, or question"}>
+          <textarea
+            style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+            placeholder={isTrainer ? "e.g. Gym closed this Friday for the holiday…" : "e.g. Hit a new PR on squats today! 💪"}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </Field>
+        <Btn onClick={post} disabled={sending || !text.trim()}>
+          {isTrainer ? <><Megaphone size={15} /> Post announcement</> : <><Send size={15} /> Post</>}
+        </Btn>
+      </Card>
+
+      {loading ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading…</div>
+      ) : posts.length === 0 ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No posts yet — be the first to share something!</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {posts.map((p) => (
+            <Card
+              key={p.id}
+              style={p.authorType === "trainer" ? { borderColor: COLORS.accent, background: COLORS.accentDim } : {}}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {p.authorType === "trainer" && <Megaphone size={14} color={COLORS.accent} />}
+                  <span style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{p.authorName}</span>
+                </div>
+                {isTrainer && (
+                  <button onClick={() => removePost(p.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={13} /></button>
+                )}
+              </div>
+              <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{p.text}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 8 }}>{new Date(p.date).toLocaleString()}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function IntakeForm({ data, onSave, onClose }) {
   const existing = data.intake || {};
   const existingTotalIn = Number(existing.heightIn) || 0;
@@ -1647,10 +2256,12 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
+    { id: "mobility", label: "Mobility", icon: Activity },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
+    { id: "community", label: "Community", icon: Users },
   ];
 
   useEffect(() => {
@@ -1660,18 +2271,49 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     }
   }, [data.intake, autoPromptShown]);
 
+  const [notifBusy, setNotifBusy] = useState(false);
+
+  const enableNotifications = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      alert("Push notifications aren't supported in this browser. On iPhone, add this app to your Home Screen first, then try again from there.");
+      return;
+    }
+    setNotifBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotifBusy(false);
+        return;
+      }
+      const { VAPID_PUBLIC_KEY } = await import("./pushConfig.js");
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      }));
+      await onSave({ ...data, pushSubscription: sub.toJSON() });
+    } catch (e) {
+      console.error(e);
+    }
+    setNotifBusy(false);
+  };
+
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
       <style>{FONT_STACK}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src="/logo-mark.png" alt="" style={{ width: 34, height: 34, objectFit: "contain", borderRadius: 8 }} />
           <div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>Hey, {client.name.split(" ")[0]}</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT · v1.1</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Xcel Online PT</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <button onClick={enableNotifications} disabled={notifBusy} title={data.pushSubscription ? "Notifications on" : "Enable notifications"} style={{ background: "none", border: "none", color: data.pushSubscription ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}>
+            {data.pushSubscription ? <Bell size={18} /> : <BellOff size={18} />}
+          </button>
           <button onClick={() => setShowIntake(true)} title="Edit your profile" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><FileText size={18} /></button>
           <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><LogOut size={18} /></button>
         </div>
@@ -1679,17 +2321,19 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} />}
+        {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
+        {tab === "community" && <CommunityBoard isTrainer={false} authorName={client.name} />}
       </div>
 
       {showIntake && (
         <IntakeForm data={data} onSave={onSave} onClose={() => setShowIntake(false)} />
       )}
 
-      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg, paddingBottom: "env(safe-area-inset-bottom)" }}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -1977,6 +2621,56 @@ function TodayTab({ data, exercises, onSave }) {
   );
 }
 
+function BarcodeScanner({ onDetected, onClose }) {
+  const videoRef = useRef(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    let controlsRef = null;
+
+    (async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        const reader = new BrowserMultiFormatReader();
+        const controls = await reader.decodeFromConstraints(
+          { video: { facingMode: "environment" } },
+          videoRef.current,
+          (result) => {
+            if (result && active) {
+              active = false;
+              controls.stop();
+              onDetected(result.getText());
+            }
+          }
+        );
+        controlsRef = controls;
+      } catch (e) {
+        setError("Couldn't access your camera. Check that this site has camera permission in your browser settings, then try again.");
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (controlsRef) controlsRef.stop();
+    };
+  }, [onDetected]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <button onClick={onClose} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", color: "#fff", cursor: "pointer" }}><X size={26} /></button>
+      {error ? (
+        <div style={{ color: COLORS.danger, textAlign: "center", maxWidth: 300, fontSize: 13 }}>{error}</div>
+      ) : (
+        <>
+          <video ref={videoRef} style={{ width: "100%", maxWidth: 420, borderRadius: 12, background: "#000" }} muted playsInline />
+          <div style={{ color: "#fff", fontSize: 13, marginTop: 14 }}>Point your camera at a barcode</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ClientNutrition({ data, onSave }) {
   const targets = data.nutrition?.targets || {};
   const hasTargets = targets.calories || targets.protein || targets.carbs || targets.fat;
@@ -1990,6 +2684,8 @@ function ClientNutrition({ data, onSave }) {
   const [oz, setOz] = useState("4");
   const [manual, setManual] = useState(null); // { name, calories, protein, carbs, fat }
   const [mealPlan, setMealPlan] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [barcodeError, setBarcodeError] = useState("");
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
@@ -2002,6 +2698,13 @@ function ClientNutrition({ data, onSave }) {
     return () => clearTimeout(t);
   }, [query]);
 
+  const burnedEntries = todayLog?.burned || [];
+  const totalBurned = burnedEntries.reduce((sum, b) => sum + (Number(b.calories) || 0), 0);
+
+  const [burnActivity, setBurnActivity] = useState("Workout");
+  const [burnCustomLabel, setBurnCustomLabel] = useState("");
+  const [burnCals, setBurnCals] = useState("");
+
   const totals = entries.reduce((acc, e) => ({
     calories: acc.calories + (e.calories || 0),
     protein: acc.protein + (e.protein || 0),
@@ -2011,8 +2714,28 @@ function ClientNutrition({ data, onSave }) {
 
   const saveEntries = async (nextEntries) => {
     const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
-    logs.push({ date: todayISO(), entries: nextEntries });
+    logs.push({ date: todayISO(), entries: nextEntries, burned: burnedEntries });
     await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const saveBurned = async (nextBurned) => {
+    const logs = (data.nutrition?.logs || []).filter((l) => l.date !== todayISO());
+    logs.push({ date: todayISO(), entries, burned: nextBurned });
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), logs } });
+  };
+
+  const addBurned = async () => {
+    if (!burnCals || Number(burnCals) <= 0) return;
+    const label = burnActivity === "Other" ? (burnCustomLabel.trim() || "Other") : burnActivity;
+    const entry = { id: uid(), label, calories: Number(burnCals) };
+    await saveBurned([...burnedEntries, entry]);
+    setBurnActivity("Workout");
+    setBurnCustomLabel("");
+    setBurnCals("");
+  };
+
+  const removeBurned = async (id) => {
+    await saveBurned(burnedEntries.filter((b) => b.id !== id));
   };
 
   const addFromSearch = async () => {
@@ -2060,6 +2783,39 @@ function ClientNutrition({ data, onSave }) {
     await saveEntries(entries.filter((e) => e.id !== id));
   };
 
+  const favorites = data.nutrition?.favorites || [];
+
+  const saveFavoriteList = async (nextFavorites) => {
+    await onSave({ ...data, nutrition: { ...(data.nutrition || {}), favorites: nextFavorites } });
+  };
+
+  const addFavorite = async (entry) => {
+    if (favorites.some((f) => f.name === entry.name && f.oz === entry.oz)) return;
+    const fav = { id: uid(), name: entry.name, oz: entry.oz, calories: entry.calories, protein: entry.protein, carbs: entry.carbs, fat: entry.fat };
+    await saveFavoriteList([...favorites, fav]);
+  };
+
+  const removeFavorite = async (id) => {
+    await saveFavoriteList(favorites.filter((f) => f.id !== id));
+  };
+
+  const logFavorite = async (fav) => {
+    const entry = { id: uid(), name: fav.name, oz: fav.oz, calories: fav.calories, protein: fav.protein, carbs: fav.carbs, fat: fav.fat };
+    await saveEntries([...entries, entry]);
+  };
+
+  const handleBarcodeDetected = async (code) => {
+    setScanning(false);
+    setBarcodeError("");
+    const result = await lookupBarcode(code);
+    if (!result) {
+      setBarcodeError("Couldn't find that product in the barcode database — try searching by name instead.");
+      return;
+    }
+    setPicked(result);
+    setQuery(result.name);
+  };
+
   const Meter = ({ label, value, goal, unit }) => {
     const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
     return (
@@ -2088,8 +2844,64 @@ function ClientNutrition({ data, onSave }) {
           <Meter label="Protein" value={totals.protein} goal={Number(targets.protein) || 0} unit="g" />
           <Meter label="Carbs" value={totals.carbs} goal={Number(targets.carbs) || 0} unit="g" />
           <Meter label="Fat" value={totals.fat} goal={Number(targets.fat) || 0} unit="g" />
+          {totalBurned > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>
+                <span>Calories burned (workouts)</span>
+                <span>{totalBurned}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+                <span>Net calories</span>
+                <span>{totals.calories - totalBurned}{targets.calories ? ` / ${targets.calories}` : ""}</span>
+              </div>
+            </div>
+          )}
         </Card>
       )}
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Calories burned</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Check your watch or gym equipment after a workout and log it here.</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <select
+            style={{ ...inputStyle, flex: 1, minWidth: 110 }}
+            value={burnActivity}
+            onChange={(e) => setBurnActivity(e.target.value)}
+          >
+            {BURN_ACTIVITY_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          <input
+            type="number"
+            style={{ ...inputStyle, width: 100 }}
+            placeholder="Calories"
+            value={burnCals}
+            onChange={(e) => setBurnCals(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addBurned()}
+          />
+          <Btn onClick={addBurned}><Plus size={14} /> Add</Btn>
+        </div>
+        {burnActivity === "Other" && (
+          <input
+            style={{ ...inputStyle, marginBottom: 12 }}
+            placeholder="What was it?"
+            value={burnCustomLabel}
+            onChange={(e) => setBurnCustomLabel(e.target.value)}
+          />
+        )}
+        {burnedEntries.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {burnedEntries.map((b) => (
+              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                <div style={{ fontSize: 13 }}>{b.label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 12, color: COLORS.textMuted }}>{b.calories} cal</span>
+                  <button onClick={() => removeBurned(b.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={13} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {hasTargets && (
         <Card style={{ marginBottom: 16 }}>
@@ -2126,15 +2938,44 @@ function ClientNutrition({ data, onSave }) {
         </Card>
       )}
 
-      <div style={{ position: "relative", marginBottom: 10 }}>
-        <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
-        <input
-          style={{ ...inputStyle, paddingLeft: 34 }}
-          placeholder="Search a food (e.g. grilled chicken breast)…"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
-        />
+      {favorites.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Your saved foods</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {favorites.map((f) => (
+              <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surfaceAlt, borderRadius: 8, padding: "8px 10px" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                    {f.oz ? `${f.oz} oz · ` : ""}{f.calories} cal · {f.protein}g P · {f.carbs}g C · {f.fat}g F
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Btn variant="subtle" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => logFavorite(f)}><Plus size={13} /> Add</Btn>
+                  <button onClick={() => removeFavorite(f.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
+          <input
+            style={{ ...inputStyle, paddingLeft: 34 }}
+            placeholder="Search a food (e.g. grilled chicken breast)…"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPicked(null); }}
+          />
+        </div>
+        <Btn variant="subtle" onClick={() => { setBarcodeError(""); setScanning(true); }}><ScanLine size={16} /></Btn>
       </div>
+      {barcodeError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{barcodeError}</div>}
+      {scanning && (
+        <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScanning(false)} />
+      )}
 
       {searching && <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>Searching…</div>}
 
@@ -2204,10 +3045,105 @@ function ClientNutrition({ data, onSave }) {
                   {e.oz ? `${e.oz} oz · ` : ""}{e.calories} cal · {e.protein}g P · {e.carbs}g C · {e.fat}g F
                 </div>
               </div>
-              <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  onClick={() => addFavorite(e)}
+                  title="Save as a favorite for quick re-logging"
+                  style={{ background: "none", border: "none", color: favorites.some((f) => f.name === e.name && f.oz === e.oz) ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}
+                >
+                  <Star size={15} fill={favorites.some((f) => f.name === e.name && f.oz === e.oz) ? COLORS.lime : "none"} />
+                </button>
+                <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+              </div>
             </div>
           </Card>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientMobility({ data, onSave }) {
+  const routines = data.mobility?.routines || [];
+  const logs = data.mobility?.logs || [];
+  const [expandedId, setExpandedId] = useState(null);
+
+  const lastDoneFor = (routineId) => {
+    const done = logs.filter((l) => l.routineId === routineId).sort((a, b) => b.date.localeCompare(a.date));
+    return done[0]?.date || null;
+  };
+
+  const doneToday = (routineId) => logs.some((l) => l.routineId === routineId && l.date === todayISO());
+
+  const markDone = async (routineId) => {
+    if (doneToday(routineId)) return;
+    const nextLogs = [...logs, { id: uid(), date: todayISO(), routineId }];
+    await onSave({ ...data, mobility: { ...(data.mobility || {}), logs: nextLogs } });
+  };
+
+  if (routines.length === 0) {
+    return (
+      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
+        Your trainer hasn't assigned any mobility routines yet. Check back soon, or see a note in Messages.
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        A few minutes on these each day can go a long way — general mobility guidance, not physical therapy. Check with a doctor if pain persists.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {routines.map((r) => {
+          const done = doneToday(r.id);
+          const last = lastDoneFor(r.id);
+          return (
+            <Card key={r.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{r.name}</div>
+                  <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{r.targetArea}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>
+                    {last ? `Last done ${fmtDate(last)}` : "Not done yet"}
+                  </div>
+                </div>
+                <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+                  {expandedId === r.id ? "Hide" : "View"}
+                </button>
+              </div>
+
+              {expandedId === r.id && (
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {r.exercises.map((ex) => (
+                    <div key={ex.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{ex.name}</div>
+                      <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{ex.prescription}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{ex.instructions}</div>
+                      <a
+                        href={mobilitySearchUrl(ex.name)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 11, color: COLORS.accent, marginTop: 8, display: "inline-block" }}
+                      >
+                        Watch example ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Btn
+                style={{ marginTop: 14, width: "100%" }}
+                variant={done ? "ghost" : "primary"}
+                disabled={done}
+                onClick={() => markDone(r.id)}
+              >
+                {done ? <><Check size={15} /> Done today</> : "Mark today's session complete"}
+              </Btn>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
