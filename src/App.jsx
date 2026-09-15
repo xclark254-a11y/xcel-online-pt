@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -47,6 +47,62 @@ async function sendPush(subscriptions, title, body, url) {
   } catch (e) {
     // best-effort — a failed push shouldn't block the message/post from saving
   }
+}
+
+function compressImage(file, maxDim = 1280, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height >= width && height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))), "image/jpeg", quality);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadProgressPhoto(file, ownerId) {
+  const { IMAGEKIT_PUBLIC_KEY } = await import("./imagekitConfig.js");
+  if (!IMAGEKIT_PUBLIC_KEY || IMAGEKIT_PUBLIC_KEY.startsWith("YOUR_")) {
+    throw new Error("Photo storage isn't set up yet — ask your trainer to finish the ImageKit setup.");
+  }
+  const compressed = await compressImage(file);
+  const authRes = await fetch("/api/imagekit-auth");
+  if (!authRes.ok) throw new Error("Couldn't get upload authorization.");
+  const auth = await authRes.json();
+
+  const formData = new FormData();
+  formData.append("file", compressed, `progress_${ownerId}_${Date.now()}.jpg`);
+  formData.append("fileName", `progress_${ownerId}_${Date.now()}.jpg`);
+  formData.append("publicKey", IMAGEKIT_PUBLIC_KEY);
+  formData.append("signature", auth.signature);
+  formData.append("token", auth.token);
+  formData.append("expire", auth.expire);
+  formData.append("folder", "/progress-photos");
+
+  const uploadRes = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
+    method: "POST",
+    body: formData,
+  });
+  if (!uploadRes.ok) throw new Error("Upload failed.");
+  const uploaded = await uploadRes.json();
+  return uploaded.url;
 }
 
 const OZ_TO_G = 28.3495;
@@ -1010,6 +1066,10 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
       setError("Name or PIN not recognized");
       return;
     }
+    if (match.status === "paused") {
+      setError("Your account is currently paused. Please contact your trainer.");
+      return;
+    }
     setError("");
     onClientLogin(match);
   };
@@ -1328,11 +1388,12 @@ function ClientsTab({ clients, onRefresh }) {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [editing, setEditing] = useState(null);
+  const [showPaused, setShowPaused] = useState(false);
 
   const addClient = async () => {
     if (!name.trim() || !pin.trim()) return;
     const list = await sGet("app:clients", []);
-    list.push({ id: uid(), name: name.trim(), pin: pin.trim() });
+    list.push({ id: uid(), name: name.trim(), pin: pin.trim(), status: "active" });
     await sSet("app:clients", list);
     setName(""); setPin(""); setAdding(false);
     onRefresh();
@@ -1352,12 +1413,20 @@ function ClientsTab({ clients, onRefresh }) {
     onRefresh();
   };
 
+  const setStatus = async (id, status) => {
+    await updateClient(id, { status });
+  };
+
   const [inviteRefresh, setInviteRefresh] = useState(0);
+
+  const activeClients = clients.filter((c) => c.status !== "paused");
+  const pausedClients = clients.filter((c) => c.status === "paused");
+  const visibleClients = showPaused ? pausedClients : activeClients;
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Clients ({clients.length})</div>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Clients ({activeClients.length})</div>
         <Btn onClick={() => setAdding(!adding)} variant={adding ? "ghost" : "primary"}>
           {adding ? <X size={15} /> : <Plus size={15} />} {adding ? "Cancel" : "Add client"}
         </Btn>
@@ -1380,25 +1449,45 @@ function ClientsTab({ clients, onRefresh }) {
       <InviteByEmail onSent={() => setInviteRefresh((n) => n + 1)} />
       <PendingInvites refreshKey={inviteRefresh} />
 
+      {pausedClients.length > 0 && (
+        <button onClick={() => setShowPaused(!showPaused)} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+          {showPaused ? "← Back to active clients" : `Show paused clients (${pausedClients.length})`}
+        </button>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {clients.map((c) => (
+        {visibleClients.length === 0 && (
+          <div style={{ color: COLORS.textMuted, fontSize: 13 }}>{showPaused ? "No paused clients." : "No active clients yet."}</div>
+        )}
+        {visibleClients.map((c) => (
           <Card key={c.id} style={{ padding: 14 }}>
             {editing === c.id ? (
               <EditClientRow client={c} onSave={(patch) => updateClient(c.id, patch)} onCancel={() => setEditing(null)} />
             ) : (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{c.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{c.name}</div>
+                    {c.status === "paused" && (
+                      <span style={{ fontSize: 10, color: COLORS.textMuted, background: COLORS.surfaceAlt, borderRadius: 6, padding: "2px 6px" }}>Paused</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: COLORS.textMuted }}>PIN: {c.pin}</div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {c.status === "paused" ? (
+                    <button onClick={() => setStatus(c.id, "active")} title="Reactivate" style={{ background: "none", border: "none", color: COLORS.lime, cursor: "pointer" }}><Check size={16} /></button>
+                  ) : (
+                    <button onClick={() => setStatus(c.id, "paused")} title="Pause client" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Clock size={16} /></button>
+                  )}
                   <button onClick={() => setEditing(c.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Edit3 size={16} /></button>
-                  <button onClick={() => removeClient(c.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={16} /></button>
+                  <button onClick={() => removeClient(c.id)} title="Delete permanently" style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={16} /></button>
                 </div>
               </div>
             )}
             <IntakeViewer clientId={c.id} />
             <NutritionViewer clientId={c.id} />
+            <ProgressPhotosViewer clientId={c.id} />
           </Card>
         ))}
       </div>
@@ -1535,6 +1624,48 @@ function NutritionViewer({ clientId }) {
               })}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProgressPhotosViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [photos, setPhotos] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [viewing, setViewing] = useState(null);
+
+  const toggle = async () => {
+    if (!open && photos === null) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setPhotos([...(data.progressPhotos || [])].sort((a, b) => b.date.localeCompare(a.date)));
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide progress photos" : "View progress photos"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        !photos || photos.length === 0 ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>This client hasn't uploaded any progress photos yet.</div> :
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6, marginTop: 8 }}>
+          {photos.map((p) => (
+            <div key={p.id} onClick={() => setViewing(p)} style={{ aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", cursor: "pointer", background: COLORS.surfaceAlt }}>
+              <img src={p.url} alt={fmtDate(p.date)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {viewing && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewing(null)}>
+          <img src={viewing.url} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
+          <div style={{ color: "#fff", fontSize: 13, marginTop: 14 }}>{fmtDate(viewing.date)}</div>
         </div>
       )}
     </div>
@@ -3452,6 +3583,8 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
 
       <BodyStats data={data} onSave={onSave} />
 
+      <ProgressPhotos data={data} onSave={onSave} clientId={clientId} />
+
       {exIdsLogged.length === 0 ? (
         <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>Log a few workouts on the Today tab and your strength progress will show up here.</Card>
       ) : (
@@ -3481,6 +3614,80 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
         </>
       )}
     </div>
+  );
+}
+
+function ProgressPhotos({ data, onSave, clientId }) {
+  const photos = useMemo(
+    () => [...(data.progressPhotos || [])].sort((a, b) => b.date.localeCompare(a.date)),
+    [data.progressPhotos]
+  );
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [viewing, setViewing] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const url = await uploadProgressPhoto(file, clientId);
+      const next = [...(data.progressPhotos || []), { id: uid(), url, date: todayISO() }];
+      await onSave({ ...data, progressPhotos: next });
+    } catch (err) {
+      setError(err.message || "Upload failed. Try again.");
+    }
+    setUploading(false);
+  };
+
+  const removePhoto = async (id) => {
+    const next = (data.progressPhotos || []).filter((p) => p.id !== id);
+    await onSave({ ...data, progressPhotos: next });
+    setViewing(null);
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14 }}>Progress photos</div>
+        <Btn variant="subtle" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          {uploading ? "Uploading…" : <><Plus size={14} /> Add photo</>}
+        </Btn>
+        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
+      </div>
+
+      {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+      {photos.length === 0 ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 12 }}>No photos yet — only you and your trainer can see these.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 8 }}>
+          {photos.map((p) => (
+            <div
+              key={p.id}
+              onClick={() => setViewing(p)}
+              style={{ aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", cursor: "pointer", background: COLORS.surfaceAlt }}
+            >
+              <img src={p.url} alt={fmtDate(p.date)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewing && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewing(null)}>
+          <img src={viewing.url} alt="" style={{ maxWidth: "100%", maxHeight: "75vh", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
+          <div style={{ color: "#fff", fontSize: 13, marginTop: 14 }}>{fmtDate(viewing.date)}</div>
+          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+            <Btn variant="danger" onClick={(e) => { e.stopPropagation(); removePhoto(viewing.id); }}><Trash2 size={14} /> Delete</Btn>
+            <Btn variant="ghost" onClick={(e) => { e.stopPropagation(); setViewing(null); }}>Close</Btn>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
