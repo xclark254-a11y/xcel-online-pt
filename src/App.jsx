@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw } from "lucide-react";
+import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 
@@ -102,7 +102,53 @@ async function uploadImage(file, ownerId, folder = "progress-photos") {
   });
   if (!uploadRes.ok) throw new Error("Upload failed.");
   const uploaded = await uploadRes.json();
-  return uploaded.url;
+  return { url: uploaded.url, fileId: uploaded.fileId };
+}
+
+const MAX_VIDEO_BYTES = 20 * 1024 * 1024;
+
+async function uploadVideo(file, ownerId, folder = "message-videos") {
+  const { IMAGEKIT_PUBLIC_KEY } = await import("./imagekitConfig.js");
+  if (!IMAGEKIT_PUBLIC_KEY || IMAGEKIT_PUBLIC_KEY.startsWith("YOUR_")) {
+    throw new Error("Video storage isn't set up yet — ask your trainer to finish the ImageKit setup.");
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    throw new Error("That video is too large (20MB max) — try a shorter clip.");
+  }
+  const authRes = await fetch("/api/imagekit-auth");
+  if (!authRes.ok) throw new Error("Couldn't get upload authorization.");
+  const auth = await authRes.json();
+
+  const fileName = `${folder}_${ownerId}_${Date.now()}.mp4`;
+  const formData = new FormData();
+  formData.append("file", file, fileName);
+  formData.append("fileName", fileName);
+  formData.append("publicKey", IMAGEKIT_PUBLIC_KEY);
+  formData.append("signature", auth.signature);
+  formData.append("token", auth.token);
+  formData.append("expire", auth.expire);
+  formData.append("folder", `/${folder}`);
+
+  const uploadRes = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
+    method: "POST",
+    body: formData,
+  });
+  if (!uploadRes.ok) throw new Error("Video upload failed.");
+  const uploaded = await uploadRes.json();
+  return { url: uploaded.url, fileId: uploaded.fileId };
+}
+
+async function deleteImageKitFile(fileId) {
+  if (!fileId) return;
+  try {
+    await fetch("/api/imagekit-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId }),
+    });
+  } catch (e) {
+    // best-effort — don't block the UI if this fails
+  }
 }
 
 const OZ_TO_G = 28.3495;
@@ -2351,6 +2397,11 @@ function MessagesTab({ clients }) {
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [videoFileId, setVideoFileId] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoError, setVideoError] = useState("");
+  const videoInputRef = useRef(null);
 
   useEffect(() => {
     if (!selectedClientId) return;
@@ -2360,14 +2411,47 @@ function MessagesTab({ clients }) {
     })();
   }, [selectedClientId]);
 
+  const handleVideoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setVideoUploading(true);
+    setVideoError("");
+    try {
+      const { url, fileId } = await uploadVideo(file, selectedClientId, "message-videos");
+      setVideoUrl(url);
+      setVideoFileId(fileId);
+    } catch (err) {
+      setVideoError(err.message || "Video upload failed.");
+    }
+    setVideoUploading(false);
+  };
+
+  const cancelVideo = () => {
+    deleteImageKitFile(videoFileId);
+    setVideoUrl(null);
+    setVideoFileId(null);
+  };
+
   const send = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() && !videoUrl) return;
     const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
-    const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), date: new Date().toISOString() }];
+    const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), videoUrl: videoUrl || null, videoFileId: videoFileId || null, date: new Date().toISOString() }];
     await sSet(`client:${selectedClientId}`, { ...data, messages: next });
     setMessages(next);
-    sendPush([data.pushSubscription], "New message from your trainer", text.trim().slice(0, 120));
+    sendPush([data.pushSubscription], "New message from your trainer", text.trim() ? text.trim().slice(0, 120) : "Sent a video");
     setText("");
+    setVideoUrl(null);
+    setVideoFileId(null);
+  };
+
+  const removeMessage = async (id) => {
+    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const target = (data.messages || []).find((m) => m.id === id);
+    const next = (data.messages || []).filter((m) => m.id !== id);
+    await sSet(`client:${selectedClientId}`, { ...data, messages: next });
+    setMessages(next);
+    deleteImageKitFile(target?.videoFileId);
   };
 
   if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first.</div>;
@@ -2390,14 +2474,37 @@ function MessagesTab({ clients }) {
             maxWidth: "80%",
             fontSize: 13,
           }}>
-            <div>{m.text}</div>
-            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4 }}>{new Date(m.date).toLocaleString()}</div>
+            {m.text && <div>{m.text}</div>}
+            {m.videoUrl && (
+              <video controls src={m.videoUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 8 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>{new Date(m.date).toLocaleString()}</div>
+              {m.videoUrl && (
+                <button onClick={() => removeMessage(m.id)} title="Delete video to free up storage" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
+              )}
+            </div>
           </div>
         ))}
       </div>
 
+      {videoError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{videoError}</div>}
+
+      {videoUrl && (
+        <div style={{ position: "relative", marginBottom: 10, maxWidth: 160 }}>
+          <video src={videoUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          <button onClick={cancelVideo} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8 }}>
         <input style={inputStyle} placeholder="Write a note to your client…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        <Btn variant="subtle" onClick={() => videoInputRef.current?.click()} disabled={videoUploading}>
+          {videoUploading ? "…" : <Video size={15} />}
+        </Btn>
+        <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleVideoSelect} />
         <Btn onClick={send}><Send size={15} /></Btn>
       </div>
     </div>
@@ -2411,6 +2518,7 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoFileId, setPhotoFileId] = useState(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const [viewing, setViewing] = useState(null);
@@ -2434,8 +2542,9 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
     setPhotoUploading(true);
     setPhotoError("");
     try {
-      const url = await uploadImage(file, clientId || "trainer", "community-photos");
+      const { url, fileId } = await uploadImage(file, clientId || "trainer", "community-photos");
       setPhotoUrl(url);
+      setPhotoFileId(fileId);
     } catch (err) {
       setPhotoError(err.message || "Photo upload failed.");
     }
@@ -2470,6 +2579,7 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
       authorType: isTrainer ? "trainer" : "client",
       text: text.trim(),
       photoUrl: photoUrl || null,
+      photoFileId: photoFileId || null,
       date: new Date().toISOString(),
     };
     const next = [...list, newPost].slice(-300);
@@ -2477,6 +2587,7 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
     setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
     setText("");
     setPhotoUrl(null);
+    setPhotoFileId(null);
     setSending(false);
 
     const title = isTrainer ? "Announcement from your trainer" : `New post from ${authorName}`;
@@ -2486,9 +2597,17 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
 
   const removePost = async (id) => {
     const list = await sGet("app:communityPosts", []);
+    const target = list.find((p) => p.id === id);
     const next = list.filter((p) => p.id !== id);
     await sSet("app:communityPosts", next);
     setPosts(next.sort((a, b) => b.date.localeCompare(a.date)));
+    deleteImageKitFile(target?.photoFileId);
+  };
+
+  const cancelPendingPhoto = () => {
+    deleteImageKitFile(photoFileId);
+    setPhotoUrl(null);
+    setPhotoFileId(null);
   };
 
   return (
@@ -2509,7 +2628,7 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
           <div style={{ position: "relative", width: 90, height: 90, marginBottom: 12, borderRadius: 8, overflow: "hidden" }}>
             <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <button
-              onClick={() => setPhotoUrl(null)}
+              onClick={cancelPendingPhoto}
               style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             >
               <X size={12} />
@@ -3980,8 +4099,8 @@ function ProgressPhotos({ data, onSave, clientId }) {
     setUploading(true);
     setError("");
     try {
-      const url = await uploadImage(file, clientId, "progress-photos");
-      const next = [...(data.progressPhotos || []), { id: uid(), url, date: todayISO() }];
+      const { url, fileId } = await uploadImage(file, clientId, "progress-photos");
+      const next = [...(data.progressPhotos || []), { id: uid(), url, fileId, date: todayISO() }];
       await onSave({ ...data, progressPhotos: next });
     } catch (err) {
       setError(err.message || "Upload failed. Try again.");
@@ -3990,9 +4109,11 @@ function ProgressPhotos({ data, onSave, clientId }) {
   };
 
   const removePhoto = async (id) => {
+    const target = (data.progressPhotos || []).find((p) => p.id === id);
     const next = (data.progressPhotos || []).filter((p) => p.id !== id);
     await onSave({ ...data, progressPhotos: next });
     setViewing(null);
+    deleteImageKitFile(target?.fileId);
   };
 
   return (
@@ -4164,18 +4285,54 @@ function BodyStats({ data, onSave }) {
 
 function ClientMessages({ data, onSave, client }) {
   const [text, setText] = useState("");
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [videoFileId, setVideoFileId] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoError, setVideoError] = useState("");
+  const videoInputRef = useRef(null);
   const messages = data.messages || [];
 
+  const handleVideoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setVideoUploading(true);
+    setVideoError("");
+    try {
+      const { url, fileId } = await uploadVideo(file, client?.id || "client", "message-videos");
+      setVideoUrl(url);
+      setVideoFileId(fileId);
+    } catch (err) {
+      setVideoError(err.message || "Video upload failed.");
+    }
+    setVideoUploading(false);
+  };
+
+  const cancelVideo = () => {
+    deleteImageKitFile(videoFileId);
+    setVideoUrl(null);
+    setVideoFileId(null);
+  };
+
   const send = async () => {
-    if (!text.trim()) return;
-    const next = [...messages, { id: uid(), from: "client", text: text.trim(), date: new Date().toISOString() }];
+    if (!text.trim() && !videoUrl) return;
+    const next = [...messages, { id: uid(), from: "client", text: text.trim(), videoUrl: videoUrl || null, videoFileId: videoFileId || null, date: new Date().toISOString() }];
     await onSave({ ...data, messages: next });
     fetch("https://ntfy.sh/xcel-pt-messages2026", {
       method: "POST",
-      body: `${client?.name || "A client"}: ${text.trim()}`,
+      body: text.trim() ? `${client?.name || "A client"}: ${text.trim()}` : `${client?.name || "A client"} sent a video`,
       headers: { Title: `New message from ${client?.name || "a client"}`, Priority: "high" },
     }).catch(() => {});
     setText("");
+    setVideoUrl(null);
+    setVideoFileId(null);
+  };
+
+  const removeMessage = async (id) => {
+    const target = messages.find((m) => m.id === id);
+    const next = messages.filter((m) => m.id !== id);
+    await onSave({ ...data, messages: next });
+    deleteImageKitFile(target?.videoFileId);
   };
 
   return (
@@ -4192,13 +4349,39 @@ function ClientMessages({ data, onSave, client }) {
             maxWidth: "80%",
             fontSize: 13,
           }}>
-            <div>{m.text}</div>
-            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4 }}>{new Date(m.date).toLocaleString()}</div>
+            {m.text && <div>{m.text}</div>}
+            {m.videoUrl && (
+              <video controls src={m.videoUrl} style={{ width: "100%", maxWidth: 220, borderRadius: 8, marginTop: m.text ? 6 : 0, display: "block" }} />
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 8 }}>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>{new Date(m.date).toLocaleString()}</div>
+              {m.videoUrl && m.from === "client" && (
+                <button onClick={() => removeMessage(m.id)} title="Delete video" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={12} /></button>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      {videoError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{videoError}</div>}
+
+      {videoUrl && (
+        <div style={{ position: "relative", marginBottom: 10, maxWidth: 160 }}>
+          <video src={videoUrl} style={{ width: "100%", borderRadius: 8, display: "block" }} />
+          <button onClick={cancelVideo} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Got a form check question? Attach a short video (20MB max) and ask below.</div>
+
       <div style={{ display: "flex", gap: 8 }}>
         <input style={inputStyle} placeholder="Message your trainer…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        <Btn variant="subtle" onClick={() => videoInputRef.current?.click()} disabled={videoUploading}>
+          {videoUploading ? "…" : <Video size={15} />}
+        </Btn>
+        <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleVideoSelect} />
         <Btn onClick={send}><Send size={15} /></Btn>
       </div>
     </div>
