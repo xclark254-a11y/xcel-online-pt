@@ -1409,6 +1409,7 @@ function ClientsTab({ clients, onRefresh }) {
 function IntakeViewer({ clientId }) {
   const [open, setOpen] = useState(false);
   const [intake, setIntake] = useState(null);
+  const [waiver, setWaiver] = useState(null);
   const [latestStats, setLatestStats] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -1417,6 +1418,7 @@ function IntakeViewer({ clientId }) {
       setLoading(true);
       const data = await sGet(`client:${clientId}`, {});
       setIntake(data.intake || false);
+      setWaiver(data.waiver || false);
       const stats = (data.bodyStats || []).slice().sort((a, b) => a.date.localeCompare(b.date));
       setLatestStats(stats[stats.length - 1] || null);
       setLoading(false);
@@ -1433,17 +1435,33 @@ function IntakeViewer({ clientId }) {
       </button>
       {open && (
         loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
-        !intake ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>This client hasn't filled out their intake form yet.</div> :
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, lineHeight: 1.6 }}>
-          <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
-          <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
-          <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${Math.floor(intake.heightIn / 12)}'${intake.heightIn % 12}"` : "—"} / {intake.gender || "—"}</div>
-          <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
-          <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
-          {latestStats && (
-            <div style={{ marginTop: 6 }}>
-              <strong style={{ color: COLORS.text }}>Latest stats ({fmtDate(latestStats.date)}):</strong> {latestStats.weight} lbs{latestStats.bodyFat != null ? `, ${latestStats.bodyFat}% BF` : ""}{bmi ? `, BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})` : ""}
+          {waiver ? (
+            <div style={{ marginBottom: 8, padding: 8, background: waiver.hasFlags ? COLORS.accentDim : COLORS.surfaceAlt, borderRadius: 6 }}>
+              <strong style={{ color: COLORS.text }}>Waiver:</strong> Signed by {waiver.signatureName} on {new Date(waiver.agreedAt).toLocaleDateString()}
+              {waiver.hasFlags && <div style={{ color: COLORS.accent, marginTop: 4 }}>⚠ Flagged a "Yes" on the health screening — doctor clearance recommended.</div>}
             </div>
+          ) : (
+            <div style={{ marginBottom: 8 }}><strong style={{ color: COLORS.text }}>Waiver:</strong> Not signed yet.</div>
+          )}
+          {!intake ? (
+            <div>This client hasn't filled out their intake form yet.</div>
+          ) : (
+            <>
+              <div><strong style={{ color: COLORS.text }}>Goal:</strong> {intake.goal || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Experience:</strong> {intake.experience || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Age / height / gender:</strong> {intake.age || "—"} / {intake.heightIn ? `${Math.floor(intake.heightIn / 12)}'${intake.heightIn % 12}"` : "—"} / {intake.gender || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Equipment:</strong> {intake.equipment || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Injuries/limitations:</strong> {intake.injuries || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Medications:</strong> {intake.medications || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Physician:</strong> {intake.physicianName || "—"}</div>
+              <div><strong style={{ color: COLORS.text }}>Emergency contact:</strong> {intake.emergencyContactName || "—"} {intake.emergencyContactPhone ? `(${intake.emergencyContactPhone})` : ""}</div>
+              {latestStats && (
+                <div style={{ marginTop: 6 }}>
+                  <strong style={{ color: COLORS.text }}>Latest stats ({fmtDate(latestStats.date)}):</strong> {latestStats.weight} lbs{latestStats.bodyFat != null ? `, ${latestStats.bodyFat}% BF` : ""}{bmi ? `, BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})` : ""}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -2174,6 +2192,120 @@ function CommunityBoard({ isTrainer, authorName, clients }) {
 }
 
 
+const PARQ_QUESTIONS = [
+  "Has a doctor ever said that you have a heart condition and that you should only do physical activity recommended by a doctor?",
+  "Do you feel pain in your chest when you do physical activity?",
+  "In the past month, have you had chest pain when you were not doing physical activity?",
+  "Do you lose your balance because of dizziness, or have you lost consciousness in the past 12 months?",
+  "Do you have a bone or joint problem that could be made worse by a change in your physical activity?",
+  "Is your doctor currently prescribing medication for your blood pressure or a heart condition?",
+  "Do you know of any other reason why you should not do physical activity?",
+];
+
+function WaiverForm({ data, onSave }) {
+  const [answers, setAnswers] = useState(Array(PARQ_QUESTIONS.length).fill(null));
+  const [signatureName, setSignatureName] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const allAnswered = answers.every((a) => a !== null);
+  const hasFlags = answers.some((a) => a === true);
+  const canSubmit = allAnswered && agreed && signatureName.trim().length > 1;
+
+  const submit = async () => {
+    if (!allAnswered) return setError("Please answer every question above.");
+    if (!signatureName.trim()) return setError("Please type your full name as your signature.");
+    if (!agreed) return setError("Please check the box to agree before continuing.");
+    setError("");
+    setSaving(true);
+    const waiver = {
+      parqAnswers: answers,
+      hasFlags,
+      signatureName: signatureName.trim(),
+      agreedAt: new Date().toISOString(),
+      version: "1.0",
+    };
+    await onSave({ ...data, waiver });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ ...pageBase, padding: "24px 20px", paddingTop: "calc(24px + env(safe-area-inset-top))", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <style>{FONT_STACK}</style>
+      <div style={{ width: "100%", maxWidth: 480 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 60, height: 60, borderRadius: 14, overflow: "hidden", marginBottom: 12 }}>
+            <img src="/logo-mark.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, margin: 0 }}>Before we get started</h1>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>A quick health screening and waiver — required once before you can use the app.</p>
+        </div>
+
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Physical activity readiness questions</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {PARQ_QUESTIONS.map((q, i) => (
+              <div key={i}>
+                <div style={{ fontSize: 13, marginBottom: 8, lineHeight: 1.4 }}>{q}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn
+                    variant={answers[i] === true ? "primary" : "ghost"}
+                    style={{ flex: 1, padding: "8px 12px", fontSize: 12 }}
+                    onClick={() => setAnswers(answers.map((a, idx) => (idx === i ? true : a)))}
+                  >
+                    Yes
+                  </Btn>
+                  <Btn
+                    variant={answers[i] === false ? "primary" : "ghost"}
+                    style={{ flex: 1, padding: "8px 12px", fontSize: 12 }}
+                    onClick={() => setAnswers(answers.map((a, idx) => (idx === i ? false : a)))}
+                  >
+                    No
+                  </Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+          {hasFlags && (
+            <div style={{ marginTop: 16, padding: 12, background: COLORS.accentDim, borderRadius: 8, fontSize: 12, color: COLORS.text, lineHeight: 1.5 }}>
+              Based on your answers, it's recommended you check with a doctor before starting or continuing an exercise program. Your trainer will see this so they can plan around it — you can still continue below.
+            </div>
+          )}
+        </Card>
+
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Liability waiver & release</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.6, maxHeight: 180, overflowY: "auto", padding: 10, background: COLORS.surfaceAlt, borderRadius: 8 }}>
+            I acknowledge that participation in personal training sessions and fitness activities offered through Xcel Online PT involves inherent risks of injury, including but not limited to muscle strains, sprains, fractures, cardiovascular events, and in rare cases, serious injury or death. I voluntarily assume all such risks.
+            <br /><br />
+            I certify that I have answered the questions above truthfully and am voluntarily participating with full knowledge of the risks involved. If I answered "Yes" to any question above, I understand it is recommended that I consult a physician before beginning or continuing an exercise program, and I take full responsibility for that decision.
+            <br /><br />
+            I release Xcel Online PT, its owner, trainers, and staff from any and all liability, claims, or causes of action arising from my participation in training sessions, to the fullest extent permitted by law.
+            <br /><br />
+            By typing my name below and checking the box, I agree that this constitutes my electronic signature and acknowledgment of the above.
+          </div>
+
+          <Field label="Type your full legal name as your signature">
+            <input style={{ ...inputStyle, marginTop: 12 }} placeholder="Full name" value={signatureName} onChange={(e) => setSignatureName(e.target.value)} />
+          </Field>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: COLORS.textMuted, cursor: "pointer", marginTop: 6 }}>
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} style={{ marginTop: 2 }} />
+            I have read and agree to the waiver above.
+          </label>
+        </Card>
+
+        {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+        <Btn onClick={submit} disabled={!canSubmit || saving} style={{ width: "100%" }}>
+          {saving ? "Saving…" : "Agree & continue"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 function IntakeForm({ data, onSave, onClose }) {
   const existing = data.intake || {};
   const existingTotalIn = Number(existing.heightIn) || 0;
@@ -2182,6 +2314,10 @@ function IntakeForm({ data, onSave, onClose }) {
     experience: existing.experience || "Beginner",
     equipment: existing.equipment || "",
     injuries: existing.injuries || "",
+    medications: existing.medications || "",
+    physicianName: existing.physicianName || "",
+    emergencyContactName: existing.emergencyContactName || "",
+    emergencyContactPhone: existing.emergencyContactPhone || "",
     age: existing.age || "",
     heightFt: existingTotalIn ? Math.floor(existingTotalIn / 12) : "",
     heightInRem: existingTotalIn ? existingTotalIn % 12 : "",
@@ -2243,6 +2379,22 @@ function IntakeForm({ data, onSave, onClose }) {
         <Field label="Any injuries or limitations we should know about?">
           <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="e.g. lower back sensitivity, knee issue — or 'none'" value={form.injuries} onChange={(e) => setForm({ ...form, injuries: e.target.value })} />
         </Field>
+        <Field label="Any medications you're currently taking? (optional)">
+          <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} placeholder="e.g. blood pressure medication — or 'none'" value={form.medications} onChange={(e) => setForm({ ...form, medications: e.target.value })} />
+        </Field>
+        <Field label="Physician's name (optional)">
+          <input style={inputStyle} placeholder="Dr. Smith" value={form.physicianName} onChange={(e) => setForm({ ...form, physicianName: e.target.value })} />
+        </Field>
+
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13, marginTop: 4, marginBottom: 10 }}>Emergency contact</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
+          <Field label="Contact name">
+            <input style={inputStyle} value={form.emergencyContactName} onChange={(e) => setForm({ ...form, emergencyContactName: e.target.value })} />
+          </Field>
+          <Field label="Contact phone">
+            <input type="tel" style={inputStyle} value={form.emergencyContactPhone} onChange={(e) => setForm({ ...form, emergencyContactPhone: e.target.value })} />
+          </Field>
+        </div>
 
         <Btn onClick={save} disabled={saving} style={{ width: "100%", marginTop: 4 }}>{saving ? "Saving…" : "Save"}</Btn>
       </div>
@@ -2265,11 +2417,11 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   ];
 
   useEffect(() => {
-    if (!data.intake && !autoPromptShown) {
+    if (data.waiver && !data.intake && !autoPromptShown) {
       setShowIntake(true);
       setAutoPromptShown(true);
     }
-  }, [data.intake, autoPromptShown]);
+  }, [data.waiver, data.intake, autoPromptShown]);
 
   const [notifBusy, setNotifBusy] = useState(false);
 
@@ -2298,6 +2450,10 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     }
     setNotifBusy(false);
   };
+
+  if (!data.waiver) {
+    return <WaiverForm data={data} onSave={onSave} />;
+  }
 
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column", minHeight: 600 }}>
