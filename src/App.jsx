@@ -153,6 +153,46 @@ async function lookupBarcode(code) {
 
 const BURN_ACTIVITY_OPTIONS = ["Workout", "Walk", "Run", "Treadmill", "Bike", "Swim", "Sports", "Hike", "Other"];
 
+const DAILY_QUOTES = [
+  { text: "The only bad workout is the one that didn't happen.", author: "" },
+  { text: "Discipline is choosing between what you want now and what you want most.", author: "" },
+  { text: "Small steps every day add up to big results.", author: "" },
+  { text: "Your body can stand almost anything. It's your mind you have to convince.", author: "" },
+  { text: "Motivation gets you started. Habit keeps you going.", author: "Jim Ryun" },
+  { text: "The pain you feel today will be the strength you feel tomorrow.", author: "" },
+  { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
+  { text: "It never gets easier, you just get stronger.", author: "" },
+  { text: "Don't count the days, make the days count.", author: "Muhammad Ali" },
+  { text: "A one-hour workout is 4% of your day. No excuses.", author: "" },
+  { text: "Progress, not perfection.", author: "" },
+  { text: "The hardest lift is lifting yourself off the couch.", author: "" },
+  { text: "You don't have to be extreme, just consistent.", author: "" },
+  { text: "Well done is better than well said.", author: "Benjamin Franklin" },
+  { text: "Take care of your body. It's the only place you have to live.", author: "Jim Rohn" },
+  { text: "What seems impossible today will one day become your warm-up.", author: "" },
+  { text: "The groundwork for all happiness is good health.", author: "Leigh Hunt" },
+  { text: "Strength does not come from winning. Your struggles develop your strengths.", author: "Arnold Schwarzenegger" },
+  { text: "Every workout counts, even the ones that feel small.", author: "" },
+  { text: "You are one workout away from a good mood.", author: "" },
+  { text: "The best project you'll ever work on is you.", author: "" },
+  { text: "Sweat is just fat crying.", author: "" },
+  { text: "Fall in love with taking care of yourself.", author: "" },
+  { text: "Nothing changes if nothing changes.", author: "" },
+  { text: "Consistency is what transforms average into excellence.", author: "" },
+  { text: "The difference between try and triumph is a little umph.", author: "" },
+  { text: "Energy and persistence conquer all things.", author: "Benjamin Franklin" },
+  { text: "You are stronger than you think.", author: "" },
+  { text: "Focus on progress, not perfection.", author: "" },
+  { text: "Today's actions are tomorrow's results.", author: "" },
+];
+
+function todaysQuote() {
+  const start = new Date(new Date().getFullYear(), 0, 0);
+  const diff = new Date() - start;
+  const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+  return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
+}
+
 const MEAL_OPTIONS = {
   breakfast: [
     { name: "Egg whites, oats & banana", calories: 380, protein: 28, carbs: 52, fat: 6, ingredients: ["6 egg whites", "1/2 cup dry oats", "1 medium banana"] },
@@ -1057,6 +1097,7 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const quote = useMemo(() => todaysQuote(), []);
 
   const handleLogin = () => {
     const match = clients.find(
@@ -1086,6 +1127,13 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
             Xcel Online PT
           </h1>
           <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 6 }}>Sign in to see your workouts</p>
+        </div>
+
+        <div style={{ textAlign: "center", marginBottom: 24, padding: "0 10px" }}>
+          <p style={{ fontSize: 13, fontStyle: "italic", color: COLORS.text, lineHeight: 1.5, margin: 0 }}>"{quote.text}"</p>
+          {quote.author && (
+            <p style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>— {quote.author}</p>
+          )}
         </div>
 
         <Card>
