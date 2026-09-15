@@ -77,7 +77,7 @@ function compressImage(file, maxDim = 1280, quality = 0.8) {
   });
 }
 
-async function uploadProgressPhoto(file, ownerId) {
+async function uploadImage(file, ownerId, folder = "progress-photos") {
   const { IMAGEKIT_PUBLIC_KEY } = await import("./imagekitConfig.js");
   if (!IMAGEKIT_PUBLIC_KEY || IMAGEKIT_PUBLIC_KEY.startsWith("YOUR_")) {
     throw new Error("Photo storage isn't set up yet — ask your trainer to finish the ImageKit setup.");
@@ -88,13 +88,13 @@ async function uploadProgressPhoto(file, ownerId) {
   const auth = await authRes.json();
 
   const formData = new FormData();
-  formData.append("file", compressed, `progress_${ownerId}_${Date.now()}.jpg`);
-  formData.append("fileName", `progress_${ownerId}_${Date.now()}.jpg`);
+  formData.append("file", compressed, `${folder}_${ownerId}_${Date.now()}.jpg`);
+  formData.append("fileName", `${folder}_${ownerId}_${Date.now()}.jpg`);
   formData.append("publicKey", IMAGEKIT_PUBLIC_KEY);
   formData.append("signature", auth.signature);
   formData.append("token", auth.token);
   formData.append("expire", auth.expire);
-  formData.append("folder", "/progress-photos");
+  formData.append("folder", `/${folder}`);
 
   const uploadRes = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
     method: "POST",
@@ -1226,6 +1226,43 @@ function TrainerGate({ hasPin, onSetPin, onUnlock, onBack }) {
 // ============================================================
 function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercises, onExit }) {
   const [tab, setTab] = useState("clients");
+  const [trainerSubscribed, setTrainerSubscribed] = useState(false);
+  const [notifBusy, setNotifBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const sub = await sGet("app:trainerPushSubscription", null);
+      setTrainerSubscribed(!!sub);
+    })();
+  }, []);
+
+  const enableTrainerNotifications = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      alert("Push notifications aren't supported in this browser.");
+      return;
+    }
+    setNotifBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotifBusy(false);
+        return;
+      }
+      const { VAPID_PUBLIC_KEY } = await import("./pushConfig.js");
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      }));
+      await sSet("app:trainerPushSubscription", sub.toJSON());
+      setTrainerSubscribed(true);
+    } catch (e) {
+      console.error(e);
+    }
+    setNotifBusy(false);
+  };
+
   const tabs = [
     { id: "clients", label: "Clients", icon: User },
     { id: "library", label: "Library", icon: Dumbbell },
@@ -1242,9 +1279,14 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
       <style>{FONT_STACK}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Trainer Console</div>
-        <button onClick={onExit} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <LogOut size={15} /> Exit
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button onClick={enableTrainerNotifications} disabled={notifBusy} title={trainerSubscribed ? "Notifications on" : "Enable notifications"} style={{ background: "none", border: "none", color: trainerSubscribed ? COLORS.lime : COLORS.textMuted, cursor: "pointer" }}>
+            {trainerSubscribed ? <Bell size={17} /> : <BellOff size={17} />}
+          </button>
+          <button onClick={onExit} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <LogOut size={15} /> Exit
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", borderBottom: `1px solid ${COLORS.border}`, padding: "0 12px", overflowX: "auto" }}>
@@ -2237,11 +2279,16 @@ function MessagesTab({ clients }) {
 }
 
 // ============================================================
-function CommunityBoard({ isTrainer, authorName, clients }) {
+function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [viewing, setViewing] = useState(null);
+  const photoInputRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
@@ -2254,8 +2301,41 @@ function CommunityBoard({ isTrainer, authorName, clients }) {
     load();
   }, []);
 
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoUploading(true);
+    setPhotoError("");
+    try {
+      const url = await uploadImage(file, clientId || "trainer", "community-photos");
+      setPhotoUrl(url);
+    } catch (err) {
+      setPhotoError(err.message || "Photo upload failed.");
+    }
+    setPhotoUploading(false);
+  };
+
+  const notifyEveryone = async (title, body) => {
+    const clientsList = await sGet("app:clients", []);
+    const clientSubs = await Promise.all(
+      clientsList
+        .filter((c) => c.id !== clientId)
+        .map(async (c) => {
+          const d = await sGet(`client:${c.id}`, {});
+          return d.pushSubscription;
+        })
+    );
+    const subs = [...clientSubs];
+    if (!isTrainer) {
+      const trainerSub = await sGet("app:trainerPushSubscription", null);
+      if (trainerSub) subs.push(trainerSub);
+    }
+    sendPush(subs, title, body);
+  };
+
   const post = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() && !photoUrl) return;
     setSending(true);
     const list = await sGet("app:communityPosts", []);
     const newPost = {
@@ -2263,21 +2343,19 @@ function CommunityBoard({ isTrainer, authorName, clients }) {
       authorName: isTrainer ? "Your trainer" : authorName,
       authorType: isTrainer ? "trainer" : "client",
       text: text.trim(),
+      photoUrl: photoUrl || null,
       date: new Date().toISOString(),
     };
     const next = [...list, newPost].slice(-300);
     await sSet("app:communityPosts", next);
     setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
     setText("");
+    setPhotoUrl(null);
     setSending(false);
 
-    if (isTrainer && clients?.length) {
-      const subs = await Promise.all(clients.map(async (c) => {
-        const d = await sGet(`client:${c.id}`, {});
-        return d.pushSubscription;
-      }));
-      sendPush(subs, "Announcement from your trainer", newPost.text.slice(0, 120));
-    }
+    const title = isTrainer ? "Announcement from your trainer" : `New post from ${authorName}`;
+    const body = newPost.text ? newPost.text.slice(0, 120) : "Shared a photo on the community wall";
+    notifyEveryone(title, body);
   };
 
   const removePost = async (id) => {
@@ -2298,9 +2376,30 @@ function CommunityBoard({ isTrainer, authorName, clients }) {
             onChange={(e) => setText(e.target.value)}
           />
         </Field>
-        <Btn onClick={post} disabled={sending || !text.trim()}>
-          {isTrainer ? <><Megaphone size={15} /> Post announcement</> : <><Send size={15} /> Post</>}
-        </Btn>
+
+        {photoError && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 10 }}>{photoError}</div>}
+
+        {photoUrl && (
+          <div style={{ position: "relative", width: 90, height: 90, marginBottom: 12, borderRadius: 8, overflow: "hidden" }}>
+            <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <button
+              onClick={() => setPhotoUrl(null)}
+              style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 999, color: "#fff", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={post} disabled={sending || (!text.trim() && !photoUrl)}>
+            {isTrainer ? <><Megaphone size={15} /> Post announcement</> : <><Send size={15} /> Post</>}
+          </Btn>
+          <Btn variant="subtle" onClick={() => photoInputRef.current?.click()} disabled={photoUploading}>
+            {photoUploading ? "Uploading…" : <ImageIcon size={15} />}
+          </Btn>
+          <input ref={photoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoSelect} />
+        </div>
       </Card>
 
       {loading ? (
@@ -2323,10 +2422,21 @@ function CommunityBoard({ isTrainer, authorName, clients }) {
                   <button onClick={() => removePost(p.id)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={13} /></button>
                 )}
               </div>
-              <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{p.text}</div>
+              {p.text && <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{p.text}</div>}
+              {p.photoUrl && (
+                <div onClick={() => setViewing(p.photoUrl)} style={{ marginTop: 10, borderRadius: 8, overflow: "hidden", cursor: "pointer", maxWidth: 200 }}>
+                  <img src={p.photoUrl} alt="" style={{ width: "100%", display: "block" }} />
+                </div>
+              )}
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 8 }}>{new Date(p.date).toLocaleString()}</div>
             </Card>
           ))}
+        </div>
+      )}
+
+      {viewing && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewing(null)}>
+          <img src={viewing} alt="" style={{ maxWidth: "100%", maxHeight: "85vh", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
         </div>
       )}
     </div>
@@ -2629,7 +2739,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
-        {tab === "community" && <CommunityBoard isTrainer={false} authorName={client.name} />}
+        {tab === "community" && <CommunityBoard isTrainer={false} authorName={client.name} clientId={client.id} />}
       </div>
 
       {showIntake && (
@@ -3650,7 +3760,7 @@ function ProgressPhotos({ data, onSave, clientId }) {
     setUploading(true);
     setError("");
     try {
-      const url = await uploadProgressPhoto(file, clientId);
+      const url = await uploadImage(file, clientId, "progress-photos");
       const next = [...(data.progressPhotos || []), { id: uid(), url, date: todayISO() }];
       await onSave({ ...data, progressPhotos: next });
     } catch (err) {
