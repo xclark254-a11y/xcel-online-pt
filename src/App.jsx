@@ -1308,6 +1308,9 @@ export default function App() {
     const invites = await sGet("app:invites", []);
     await sSet("app:invites", invites.map((i) => (i.id === pendingInvite.id ? { ...i, status: "claimed" } : i)));
 
+    const trainerSub = await sGet("app:trainerPushSubscription", null);
+    if (trainerSub) sendPush([trainerSub], "New client signed up", `${name} just set up their account from your invite.`);
+
     window.history.replaceState({}, "", window.location.pathname);
     setCurrentClient(newClient);
     await loadClientData(newClient.id);
