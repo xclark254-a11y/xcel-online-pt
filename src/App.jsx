@@ -1537,6 +1537,68 @@ function InviteSignup({ invite, onComplete }) {
   );
 }
 
+function OnboardingPrompts({ pushEnabled, onEnablePush, storageKey }) {
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === "1");
+  const [installed, setInstalled] = useState(true);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    setInstalled(standalone);
+  }, []);
+
+  if (dismissed || (installed && pushEnabled)) return null;
+
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  const dismiss = () => {
+    localStorage.setItem(storageKey, "1");
+    setDismissed(true);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 70 }}>
+      <div style={{ background: COLORS.bg, borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 420, border: `1px solid ${COLORS.border}`, borderBottom: "none" }}>
+        <style>{FONT_STACK}</style>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Get the most out of the app</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 18 }}>Two quick things — takes 10 seconds.</div>
+
+        {!installed && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ fontSize: 22 }}>📲</div>
+              <div>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, marginBottom: 4 }}>Add to your Home Screen</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5 }}>
+                  {ios ? (
+                    <>Tap the <b style={{ color: COLORS.text }}>Share</b> button in your browser, then <b style={{ color: COLORS.text }}>"Add to Home Screen."</b></>
+                  ) : (
+                    <>Open your browser menu and choose <b style={{ color: COLORS.text }}>"Add to Home Screen"</b> or <b style={{ color: COLORS.text }}>"Install App."</b></>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {!pushEnabled && (
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 12 }}>
+              <div style={{ fontSize: 22 }}>🔔</div>
+              <div>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, marginBottom: 4 }}>Turn on notifications</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5 }}>So you never miss a message or update.</div>
+              </div>
+            </div>
+            <Btn onClick={onEnablePush} style={{ width: "100%" }}>Enable notifications</Btn>
+          </Card>
+        )}
+
+        <Btn variant="ghost" onClick={dismiss} style={{ width: "100%" }}>Maybe later</Btn>
+      </div>
+    </div>
+  );
+}
+
 function TrainerGate({ hasPin, onSetPin, onUnlock, onBack }) {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -1640,6 +1702,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   return (
     <div style={{ ...pageBase, display: "flex", flexDirection: "column" }}>
       <style>{FONT_STACK}</style>
+      <OnboardingPrompts pushEnabled={trainerSubscribed} onEnablePush={enableTrainerNotifications} storageKey="xcel_onboarding_dismissed_trainer" />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "calc(16px + env(safe-area-inset-top))", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17 }}>Trainer Console</div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -3201,6 +3264,10 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       {showIntake && (
         <IntakeForm data={data} onSave={onSave} onClose={() => setShowIntake(false)} />
+      )}
+
+      {!showIntake && data.intake && (
+        <OnboardingPrompts pushEnabled={!!data.pushSubscription} onEnablePush={enableNotifications} storageKey="xcel_onboarding_dismissed_client" />
       )}
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg, paddingBottom: "env(safe-area-inset-bottom)" }}>
