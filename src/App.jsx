@@ -4113,17 +4113,91 @@ function ClientMobility({ data, onSave }) {
   );
 }
 
+function MuscleIcon({ muscle, size = 44 }) {
+  const off = COLORS.surfaceAlt;
+  const on = COLORS.accent;
+  const border = COLORS.border;
+  const isBack = muscle === "Back" || muscle === "Glutes";
+
+  if (muscle === "Full Body" || muscle === "Cardio") {
+    const IconEl = muscle === "Cardio" ? Flame : Activity;
+    return (
+      <div style={{ width: size, height: Math.round(size * (260 / 140)), display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.surfaceAlt, borderRadius: 10 }}>
+        <IconEl size={Math.round(size * 0.5)} color={COLORS.accent} />
+      </div>
+    );
+  }
+
+  const fillFor = (region) => {
+    if (isBack) {
+      if (region === "shoulders") return muscle === "Shoulders" ? on : off;
+      if (region === "arms") return muscle === "Arms" ? on : off;
+      if (region === "torsoUpper") return muscle === "Back" ? on : off;
+      if (region === "hip") return muscle === "Glutes" ? on : off;
+      if (region === "legs") return muscle === "Legs" ? on : off;
+    } else {
+      if (region === "shoulders") return muscle === "Shoulders" ? on : off;
+      if (region === "arms") return muscle === "Arms" ? on : off;
+      if (region === "torsoUpper") return muscle === "Chest" ? on : off;
+      if (region === "torsoLower") return muscle === "Core" ? on : off;
+      if (region === "legs") return muscle === "Legs" ? on : off;
+    }
+    return off;
+  };
+
+  return (
+    <svg viewBox="0 0 140 260" width={size} height={Math.round(size * (260 / 140))}>
+      <ellipse cx="70" cy="18" rx="13" ry="15" fill={COLORS.surface} stroke={border} strokeWidth="1.2" />
+      <rect x="64" y="30" width="12" height="8" fill={COLORS.surface} />
+      <circle cx="37" cy="48" r="11" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
+      <circle cx="103" cy="48" r="11" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
+      <rect x="23" y="55" width="15" height="72" rx="7" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
+      <rect x="102" y="55" width="15" height="72" rx="7" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
+      {isBack ? (
+        <>
+          <rect x="46" y="40" width="48" height="58" rx="9" fill={fillFor("torsoUpper")} stroke={border} strokeWidth="1.2" />
+          <rect x="46" y="100" width="48" height="28" rx="10" fill={fillFor("hip")} stroke={border} strokeWidth="1.2" />
+          <rect x="48" y="130" width="19" height="78" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+          <rect x="73" y="130" width="19" height="78" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+        </>
+      ) : (
+        <>
+          <rect x="46" y="40" width="48" height="40" rx="9" fill={fillFor("torsoUpper")} stroke={border} strokeWidth="1.2" />
+          <rect x="46" y="82" width="48" height="42" rx="9" fill={fillFor("torsoLower")} stroke={border} strokeWidth="1.2" />
+          <rect x="48" y="126" width="19" height="82" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+          <rect x="73" y="126" width="19" height="82" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+        </>
+      )}
+      <rect x="48" y="210" width="19" height="48" rx="8" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+      <rect x="73" y="210" width="19" height="48" rx="8" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 function ClientLibrary({ exercises }) {
-  const [muscleFilter, setMuscleFilter] = useState("All");
   const [equipFilter, setEquipFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(null);
+  const [openSections, setOpenSections] = useState({});
 
   const filtered = exercises.filter((e) =>
-    (muscleFilter === "All" || e.muscle === muscleFilter) &&
     (equipFilter === "All" || e.equipment === equipFilter) &&
     e.name.toLowerCase().includes(query.toLowerCase())
   );
+
+  const grouped = useMemo(() => {
+    const map = {};
+    filtered.forEach((e) => {
+      const key = e.muscle || "Other";
+      (map[key] = map[key] || []).push(e);
+    });
+    return map;
+  }, [filtered]);
+
+  const categoryOrder = MUSCLES.filter((m) => m !== "All" && grouped[m]?.length);
+  const searching = query.trim().length > 0;
+  const isOpen = (cat) => searching || !!openSections[cat];
+  const toggleSection = (cat) => setOpenSections((s) => ({ ...s, [cat]: !s[cat] }));
 
   return (
     <div>
@@ -4131,54 +4205,72 @@ function ClientLibrary({ exercises }) {
         <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
         <input style={{ ...inputStyle, paddingLeft: 34 }} placeholder="Search exercises…" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <select style={inputStyle} value={muscleFilter} onChange={(e) => setMuscleFilter(e.target.value)}>
-          {MUSCLES.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
+      <div style={{ marginBottom: 16 }}>
         <select style={inputStyle} value={equipFilter} onChange={(e) => setEquipFilter(e.target.value)}>
           {EQUIPMENT.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map((e) => (
-          <Card key={e.id} style={{ padding: 14, cursor: "pointer" }} onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{e.name}</div>
-              <div style={{ fontSize: 11, color: COLORS.accent }}>{e.muscle}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {categoryOrder.length === 0 && (
+          <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>
+        )}
+        {categoryOrder.map((cat) => {
+          const items = grouped[cat];
+          const open = isOpen(cat);
+          return (
+            <div key={cat}>
+              <Card onClick={() => toggleSection(cat)} style={{ padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                <MuscleIcon muscle={cat} size={40} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{cat}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted }}>{items.length} exercise{items.length === 1 ? "" : "s"}</div>
+                </div>
+                <ChevronLeft size={16} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", transition: "transform 0.15s", flexShrink: 0 }} />
+              </Card>
+
+              {open && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, paddingLeft: 8 }}>
+                  {items.map((e) => (
+                    <Card key={e.id} style={{ padding: 14, cursor: "pointer" }} onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{e.name}</div>
+                        <div style={{ fontSize: 11, color: COLORS.textMuted }}>{e.equipment}</div>
+                      </div>
+                      {expanded === e.id && (
+                        <div>
+                          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
+                          {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
+                            <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden", maxWidth: 280, marginLeft: "auto", marginRight: "auto" }}>
+                              <iframe
+                                width="100%"
+                                style={{ border: "none", aspectRatio: "9 / 16", display: "block" }}
+                                src={toYouTubeEmbed(e.videoUrl)}
+                                title={e.name}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                            </div>
+                          ) : (
+                            <a
+                              href={exerciseSearchUrl(e.name)}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(ev) => ev.stopPropagation()}
+                              style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
+                            >
+                              Watch an example ↗
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{e.equipment}</div>
-            {expanded === e.id && (
-              <div>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
-                {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
-                  <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden" }}>
-                    <iframe
-                      width="100%"
-                      height="200"
-                      src={toYouTubeEmbed(e.videoUrl)}
-                      title={e.name}
-                      style={{ border: "none" }}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                ) : (
-                  <a
-                    href={exerciseSearchUrl(e.name)}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(ev) => ev.stopPropagation()}
-                    style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
-                  >
-                    Watch an example ↗
-                  </a>
-                )}
-              </div>
-            )}
-          </Card>
-        ))}
-        {filtered.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>}
+          );
+        })}
       </div>
     </div>
   );
