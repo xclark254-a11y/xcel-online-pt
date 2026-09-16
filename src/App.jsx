@@ -4122,7 +4122,7 @@ function MuscleIcon({ muscle, size = 44 }) {
   if (muscle === "Full Body" || muscle === "Cardio") {
     const IconEl = muscle === "Cardio" ? Flame : Activity;
     return (
-      <div style={{ width: size, height: Math.round(size * (260 / 140)), display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.surfaceAlt, borderRadius: 10 }}>
+      <div style={{ width: size, height: Math.round(size * (270 / 140)), display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.surfaceAlt, borderRadius: 10 }}>
         <IconEl size={Math.round(size * 0.5)} color={COLORS.accent} />
       </div>
     );
@@ -4133,7 +4133,7 @@ function MuscleIcon({ muscle, size = 44 }) {
       if (region === "shoulders") return muscle === "Shoulders" ? on : off;
       if (region === "arms") return muscle === "Arms" ? on : off;
       if (region === "torsoUpper") return muscle === "Back" ? on : off;
-      if (region === "hip") return muscle === "Glutes" ? on : off;
+      if (region === "torsoLower") return muscle === "Glutes" ? on : off;
       if (region === "legs") return muscle === "Legs" ? on : off;
     } else {
       if (region === "shoulders") return muscle === "Shoulders" ? on : off;
@@ -4146,30 +4146,19 @@ function MuscleIcon({ muscle, size = 44 }) {
   };
 
   return (
-    <svg viewBox="0 0 140 260" width={size} height={Math.round(size * (260 / 140))}>
-      <ellipse cx="70" cy="18" rx="13" ry="15" fill={COLORS.surface} stroke={border} strokeWidth="1.2" />
-      <rect x="64" y="30" width="12" height="8" fill={COLORS.surface} />
-      <circle cx="37" cy="48" r="11" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
-      <circle cx="103" cy="48" r="11" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
-      <rect x="23" y="55" width="15" height="72" rx="7" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
-      <rect x="102" y="55" width="15" height="72" rx="7" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
-      {isBack ? (
-        <>
-          <rect x="46" y="40" width="48" height="58" rx="9" fill={fillFor("torsoUpper")} stroke={border} strokeWidth="1.2" />
-          <rect x="46" y="100" width="48" height="28" rx="10" fill={fillFor("hip")} stroke={border} strokeWidth="1.2" />
-          <rect x="48" y="130" width="19" height="78" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
-          <rect x="73" y="130" width="19" height="78" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
-        </>
-      ) : (
-        <>
-          <rect x="46" y="40" width="48" height="40" rx="9" fill={fillFor("torsoUpper")} stroke={border} strokeWidth="1.2" />
-          <rect x="46" y="82" width="48" height="42" rx="9" fill={fillFor("torsoLower")} stroke={border} strokeWidth="1.2" />
-          <rect x="48" y="126" width="19" height="82" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
-          <rect x="73" y="126" width="19" height="82" rx="9" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
-        </>
-      )}
-      <rect x="48" y="210" width="19" height="48" rx="8" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
-      <rect x="73" y="210" width="19" height="48" rx="8" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+    <svg viewBox="0 0 140 270" width={size} height={Math.round(size * (270 / 140))}>
+      <ellipse cx="70" cy="17" rx="13" ry="15" fill={COLORS.surface} stroke={border} strokeWidth="1.2" />
+      <path d="M62,30 Q70,34 78,30 L78,42 Q70,46 62,42 Z" fill={COLORS.surface} />
+      <circle cx="41" cy="52" r="13" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
+      <circle cx="99" cy="52" r="13" fill={fillFor("shoulders")} stroke={border} strokeWidth="1.2" />
+      <path d="M27,56 Q23,95 28,132 L40,132 Q43,95 41,56 Z" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
+      <path d="M113,56 Q117,95 112,132 L100,132 Q97,95 99,56 Z" fill={fillFor("arms")} stroke={border} strokeWidth="1.2" />
+      <path d="M41,44 Q38,50 40,58 Q35,80 51,103 L89,103 Q105,80 100,58 Q102,50 99,44 Q86,52 70,52 Q54,52 41,44 Z" fill={fillFor("torsoUpper")} stroke={border} strokeWidth="1.2" />
+      <path d="M51,103 Q45,128 45,152 Q45,160 50,163 L90,163 Q95,160 95,152 Q95,128 89,103 Z" fill={fillFor("torsoLower")} stroke={border} strokeWidth="1.2" />
+      <path d="M46,160 Q40,180 44,206 L65,206 Q68,180 65,160 Z" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+      <path d="M94,160 Q100,180 96,206 L75,206 Q72,180 75,160 Z" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+      <path d="M45,209 Q41,232 45,256 L63,256 Q66,232 64,209 Z" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
+      <path d="M95,209 Q99,232 95,256 L77,256 Q74,232 76,209 Z" fill={fillFor("legs")} stroke={border} strokeWidth="1.2" />
     </svg>
   );
 }
@@ -4179,6 +4168,7 @@ function ClientLibrary({ exercises }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [openSections, setOpenSections] = useState({});
+  const [viewMode, setViewMode] = useState("diagram");
 
   const filtered = exercises.filter((e) =>
     (equipFilter === "All" || e.equipment === equipFilter) &&
@@ -4199,79 +4189,117 @@ function ClientLibrary({ exercises }) {
   const isOpen = (cat) => searching || !!openSections[cat];
   const toggleSection = (cat) => setOpenSections((s) => ({ ...s, [cat]: !s[cat] }));
 
+  const exerciseCard = (e, showMuscleTag) => (
+    <Card key={e.id} style={{ padding: 14, cursor: "pointer" }} onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{e.name}</div>
+        <div style={{ fontSize: 11, color: showMuscleTag ? COLORS.accent : COLORS.textMuted }}>{showMuscleTag ? e.muscle : e.equipment}</div>
+      </div>
+      {showMuscleTag && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{e.equipment}</div>}
+      {expanded === e.id && (
+        <div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
+          {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
+            <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden", maxWidth: 280, marginLeft: "auto", marginRight: "auto" }}>
+              <iframe
+                width="100%"
+                style={{ border: "none", aspectRatio: "9 / 16", display: "block" }}
+                src={toYouTubeEmbed(e.videoUrl)}
+                title={e.name}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <a
+              href={exerciseSearchUrl(e.name)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(ev) => ev.stopPropagation()}
+              style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
+            >
+              Watch an example ↗
+            </a>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+
   return (
     <div>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <Search size={15} color={COLORS.textMuted} style={{ position: "absolute", left: 12, top: 12 }} />
         <input style={{ ...inputStyle, paddingLeft: 34 }} placeholder="Search exercises…" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", flex: 1, background: COLORS.surfaceAlt, borderRadius: 10, padding: 3 }}>
+          <button
+            onClick={() => setViewMode("diagram")}
+            style={{
+              flex: 1, padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+              background: viewMode === "diagram" ? COLORS.accent : "transparent",
+              color: viewMode === "diagram" ? "#fff" : COLORS.textMuted,
+              fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 12,
+            }}
+          >
+            Diagram
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            style={{
+              flex: 1, padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+              background: viewMode === "list" ? COLORS.accent : "transparent",
+              color: viewMode === "list" ? "#fff" : COLORS.textMuted,
+              fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 12,
+            }}
+          >
+            List
+          </button>
+        </div>
+      </div>
+
       <div style={{ marginBottom: 16 }}>
         <select style={inputStyle} value={equipFilter} onChange={(e) => setEquipFilter(e.target.value)}>
           {EQUIPMENT.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {categoryOrder.length === 0 && (
-          <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>
-        )}
-        {categoryOrder.map((cat) => {
-          const items = grouped[cat];
-          const open = isOpen(cat);
-          return (
-            <div key={cat}>
-              <Card onClick={() => toggleSection(cat)} style={{ padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-                <MuscleIcon muscle={cat} size={40} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{cat}</div>
-                  <div style={{ fontSize: 11, color: COLORS.textMuted }}>{items.length} exercise{items.length === 1 ? "" : "s"}</div>
-                </div>
-                <ChevronLeft size={16} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", transition: "transform 0.15s", flexShrink: 0 }} />
-              </Card>
+      {viewMode === "list" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>}
+          {filtered.map((e) => exerciseCard(e, true))}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {categoryOrder.length === 0 && (
+            <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No exercises match.</div>
+          )}
+          {categoryOrder.map((cat) => {
+            const items = grouped[cat];
+            const open = isOpen(cat);
+            return (
+              <div key={cat}>
+                <Card onClick={() => toggleSection(cat)} style={{ padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                  <MuscleIcon muscle={cat} size={40} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{cat}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>{items.length} exercise{items.length === 1 ? "" : "s"}</div>
+                  </div>
+                  <ChevronLeft size={16} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", transition: "transform 0.15s", flexShrink: 0 }} />
+                </Card>
 
-              {open && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, paddingLeft: 8 }}>
-                  {items.map((e) => (
-                    <Card key={e.id} style={{ padding: 14, cursor: "pointer" }} onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{e.name}</div>
-                        <div style={{ fontSize: 11, color: COLORS.textMuted }}>{e.equipment}</div>
-                      </div>
-                      {expanded === e.id && (
-                        <div>
-                          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, lineHeight: 1.5 }}>{e.instructions}</div>
-                          {e.videoUrl && toYouTubeEmbed(e.videoUrl) ? (
-                            <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden", maxWidth: 280, marginLeft: "auto", marginRight: "auto" }}>
-                              <iframe
-                                width="100%"
-                                style={{ border: "none", aspectRatio: "9 / 16", display: "block" }}
-                                src={toYouTubeEmbed(e.videoUrl)}
-                                title={e.name}
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                allowFullScreen
-                              />
-                            </div>
-                          ) : (
-                            <a
-                              href={exerciseSearchUrl(e.name)}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(ev) => ev.stopPropagation()}
-                              style={{ fontSize: 12, color: COLORS.accent, marginTop: 10, display: "inline-block" }}
-                            >
-                              Watch an example ↗
-                            </a>
-                          )}
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                {open && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, paddingLeft: 8 }}>
+                    {items.map((e) => exerciseCard(e, false))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
