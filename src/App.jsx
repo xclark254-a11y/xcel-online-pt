@@ -335,6 +335,16 @@ function macrosForOz(per100g, oz) {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+function resolveLogExerciseName(log, entry, program, exercises) {
+  if (log.freeform) {
+    return exercises.find((e) => e.id === entry.exerciseId)?.name || "Exercise";
+  }
+  const day = (program?.days || []).find((d) => d.id === log.dayId);
+  const dayEx = day?.exercises.find((de) => de.id === entry.dayExId);
+  const ex = exercises.find((e) => e.id === dayEx?.exerciseId);
+  return ex?.name || "Exercise";
+}
+
 function mondayOf(dateISO) {
   const d = new Date(dateISO + "T00:00:00");
   const day = d.getDay();
@@ -1742,7 +1752,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
       </div>
 
       <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
-        {tab === "clients" && <ClientsTab clients={clients} onRefresh={onRefreshClients} />}
+        {tab === "clients" && <ClientsTab clients={clients} exercises={exercises} onRefresh={onRefreshClients} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "mobility" && <MobilityTab clients={clients} />}
@@ -1851,7 +1861,7 @@ function PendingInvites({ refreshKey }) {
   );
 }
 
-function ClientsTab({ clients, onRefresh }) {
+function ClientsTab({ clients, exercises, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
@@ -1961,6 +1971,7 @@ function ClientsTab({ clients, onRefresh }) {
             <IntakeViewer clientId={c.id} />
             <NutritionViewer clientId={c.id} />
             <ProgressPhotosViewer clientId={c.id} />
+            <WorkoutLogViewer clientId={c.id} exercises={exercises} />
           </Card>
         ))}
       </div>
@@ -2145,6 +2156,64 @@ function ProgressPhotosViewer({ clientId }) {
   );
 }
 
+function WorkoutLogViewer({ clientId, exercises }) {
+  const [open, setOpen] = useState(false);
+  const [logs, setLogs] = useState(null);
+  const [program, setProgram] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expandedLog, setExpandedLog] = useState(null);
+
+  const toggle = async () => {
+    if (!open && logs === null) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, {});
+      setLogs([...(data.logs || [])].sort((a, b) => b.date.localeCompare(a.date)));
+      setProgram(data.program || { days: [] });
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide workout log" : "View workout log"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        !logs || logs.length === 0 ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>This client hasn't logged any workouts yet.</div> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+          {logs.slice(0, 15).map((log, li) => {
+            const key = log.id || `${log.date}-${log.dayId}-${li}`;
+            const isOpen = expandedLog === key;
+            return (
+              <div key={key} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedLog(isOpen ? null : key)}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.text }}>{fmtDate(log.date)} — {log.dayName || "Workout"}{log.freeform ? " (self-logged)" : ""}</div>
+                  </div>
+                  <ChevronLeft size={13} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
+                </div>
+                {isOpen && (
+                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(log.entries || []).map((entry, i) => (
+                      <div key={i}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent }}>{resolveLogExerciseName(log, entry, program, exercises)}</div>
+                        {(entry.sets || []).map((s, si) => (
+                          <div key={si} style={{ fontSize: 11, color: COLORS.textMuted, paddingLeft: 8 }}>Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
@@ -4476,6 +4545,62 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
             )}
           </Card>
         </>
+      )}
+
+      <ClientWorkoutHistory data={data} exercises={exercises} />
+    </div>
+  );
+}
+
+function ClientWorkoutHistory({ data, exercises }) {
+  const [expandedLog, setExpandedLog] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(10);
+  const logs = useMemo(() => [...(data.logs || [])].sort((a, b) => b.date.localeCompare(a.date)), [data.logs]);
+
+  if (logs.length === 0) {
+    return (
+      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
+        Your logged workouts will show up here once you save your first one.
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 12 }}>Workout history</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {logs.slice(0, visibleCount).map((log, li) => {
+          const key = log.id || `${log.date}-${log.dayId}-${li}`;
+          const open = expandedLog === key;
+          return (
+            <Card key={key} style={{ padding: 14, cursor: "pointer" }} onClick={() => setExpandedLog(open ? null : key)}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{fmtDate(log.date)}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{log.dayName || "Workout"}{log.freeform ? " · self-logged" : ""}</div>
+                </div>
+                <ChevronLeft size={16} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
+              </div>
+              {open && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {(log.entries || []).map((entry, i) => (
+                    <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{resolveLogExerciseName(log, entry, data.program, exercises)}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {(entry.sets || []).map((s, si) => (
+                          <div key={si} style={{ fontSize: 12, color: COLORS.textMuted }}>Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+      {logs.length > visibleCount && (
+        <Btn variant="ghost" style={{ width: "100%", marginTop: 10 }} onClick={() => setVisibleCount((v) => v + 10)}>Show more</Btn>
       )}
     </div>
   );
