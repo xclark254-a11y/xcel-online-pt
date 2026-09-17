@@ -1,1 +1,355 @@
-https://app.xcelathleticspt.com/promo
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Xcel Online PT — Train with Xaviar, anywhere</title>
+<meta name="description" content="The training app built by Xcel Athletics — programs, nutrition, mobility work, and direct coaching, wherever you are." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1013; --surface:#181B20; --surface-alt:#20242B; --border:#2A2F38;
+    --text:#F2F3F5; --muted:#8D93A0; --accent:#FF4E24; --accent-dim:#3A2018; --lime:#C6FF3D;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  img,svg{max-width:100%; display:block;}
+  a{color:inherit;}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 24px;}
+  h1,h2,h3{font-family:'Space Grotesk', sans-serif; letter-spacing:-0.01em; line-height:1.08;}
+
+  /* ---------- nav ---------- */
+  nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(14,16,19,0.85); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);
+  }
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:64px;}
+  .brand{display:flex; align-items:center; gap:10px; font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:17px;}
+  .brand-mark{width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg, var(--accent), #b5330f); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#fff; flex-shrink:0;}
+  .nav-cta{
+    background:var(--accent); color:#fff; font-weight:600; font-size:14px;
+    padding:10px 18px; border-radius:9px; text-decoration:none; font-family:'Space Grotesk', sans-serif;
+    white-space:nowrap;
+  }
+
+  /* ---------- hero ---------- */
+  .hero{padding:76px 0 90px;}
+  .hero .wrap{display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:start; padding-top:20px;}
+  .kicker{color:var(--muted); font-size:15px; margin-bottom:18px; max-width:420px;}
+  .kicker b{color:var(--text); font-weight:600;}
+  .hero h1{font-size:clamp(34px, 5vw, 54px); font-weight:700; margin-bottom:22px; max-width:560px;}
+  .hero p.lede{font-size:18px; color:var(--muted); max-width:460px; margin-bottom:32px; line-height:1.55;}
+  .cta-row{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:28px;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:15px;
+    padding:14px 24px; border-radius:10px; text-decoration:none; border:1px solid transparent; cursor:pointer;
+  }
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-ghost{background:transparent; color:var(--text); border-color:var(--border);}
+  .hero-note{font-size:13px; color:var(--muted);}
+
+  /* phone mockup */
+  .phone-stage{position:relative; display:flex; justify-content:center;}
+  .phone{
+    width:290px; background:var(--bg); border:10px solid #05070a; border-radius:38px;
+    box-shadow:0 40px 80px -30px rgba(255,78,36,0.25), 0 20px 60px rgba(0,0,0,0.5);
+    overflow:hidden; position:relative;
+  }
+  .phone::before{content:""; position:absolute; top:0; left:50%; transform:translateX(-50%); width:90px; height:22px; background:#05070a; border-radius:0 0 14px 14px; z-index:5;}
+  .phone-screen{padding:34px 16px 18px; min-height:560px;}
+  .ph-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .ph-hey{font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:15px;}
+  .ph-sub{font-size:10px; color:var(--muted);}
+  .ph-icons{display:flex; gap:10px; color:var(--muted);}
+  .ph-icons span{width:14px; height:14px; display:inline-block;}
+  .week-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:14px;}
+  .week-day-lbl{font-size:8px; text-align:center; color:var(--muted); margin-bottom:4px; font-weight:600;}
+  .week-day-lbl.today{color:var(--accent);}
+  .week-cell{height:34px; border-radius:6px; border:1px dashed var(--border);}
+  .week-cell.filled{border:1px solid var(--border); background:var(--surface-alt);}
+  .week-cell.active{border-color:var(--accent); background:var(--accent-dim);}
+  .ph-card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px;}
+  .ph-card-title{font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:12px; margin-bottom:8px;}
+  .ph-set-row{display:flex; gap:6px; margin-bottom:6px;}
+  .ph-input{flex:1; height:24px; background:var(--surface-alt); border:1px solid var(--border); border-radius:5px;}
+  .ph-btn{background:var(--accent); color:#fff; font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:11px; text-align:center; border-radius:8px; padding:9px; margin-top:4px;}
+  .ph-tabbar{display:flex; justify-content:space-around; border-top:1px solid var(--border); padding-top:10px; margin-top:8px;}
+  .ph-tab{display:flex; flex-direction:column; align-items:center; gap:3px; font-size:7px; color:var(--muted);}
+  .ph-tab.on{color:var(--accent);}
+  .ph-tab-dot{width:14px; height:14px; border-radius:4px; background:currentColor; opacity:0.85;}
+  .float-badge{
+    position:absolute; background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:10px 14px; box-shadow:0 12px 30px rgba(0,0,0,0.4); font-size:12px; display:flex; align-items:center; gap:8px;
+  }
+  .float-badge b{font-family:'Space Grotesk', sans-serif; color:var(--lime); font-size:14px;}
+  .fb-1{top:8%; left:-6%;}
+  .fb-2{bottom:12%; right:-8%;}
+
+  /* ---------- sections shared ---------- */
+  section{padding:88px 0;}
+  .section-head{max-width:600px; margin-bottom:56px;}
+  .section-head p.eyebrow{color:var(--accent); font-weight:600; font-size:14px; margin-bottom:12px; font-family:'Space Grotesk', sans-serif;}
+  .section-head h2{font-size:clamp(26px,3.4vw,38px); margin-bottom:16px;}
+  .section-head p.desc{color:var(--muted); font-size:16px; line-height:1.6;}
+
+  /* feature rows, alternating */
+  .feature-row{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; padding:56px 0; border-top:1px solid var(--border);}
+  .feature-row:first-of-type{border-top:none;}
+  .feature-row.reverse .f-visual{order:2;}
+  .feature-row.reverse .f-text{order:1;}
+  .f-text h3{font-size:26px; margin-bottom:14px;}
+  .f-text p{color:var(--muted); font-size:16px; line-height:1.6; margin-bottom:18px;}
+  .f-tag{display:inline-block; font-size:12px; color:var(--lime); background:rgba(198,255,61,0.08); border:1px solid rgba(198,255,61,0.25); padding:5px 12px; border-radius:999px; margin-bottom:16px; font-weight:600;}
+  .f-visual{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px; min-height:220px; display:flex; flex-direction:column; justify-content:center; gap:10px;}
+  .mini-row{display:flex; align-items:center; gap:12px; background:var(--surface-alt); border-radius:10px; padding:12px 14px;}
+  .mini-icon{width:34px; height:34px; border-radius:9px; background:var(--accent-dim); flex-shrink:0;}
+  .mini-lines{flex:1;}
+  .mini-line{height:8px; border-radius:4px; background:var(--border);}
+  .mini-line.short{width:55%; margin-top:6px;}
+  .barcode-vis{display:flex; align-items:center; justify-content:center; gap:2px; height:70px;}
+  .barcode-vis div{background:var(--text); opacity:0.85;}
+  .macro-bar{height:8px; border-radius:4px; background:var(--surface-alt); overflow:hidden; margin-bottom:4px;}
+  .macro-fill{height:100%; background:var(--lime);}
+
+  /* trainer section */
+  .trainer{background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:56px; display:grid; grid-template-columns:0.9fr 1.1fr; gap:48px; align-items:center;}
+  .trainer-badge{width:64px; height:64px; border-radius:16px; background:linear-gradient(135deg, var(--accent), #7a1f0a); display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:24px; margin-bottom:20px;}
+  .trainer h2{font-size:28px; margin-bottom:16px;}
+  .trainer p{color:var(--muted); font-size:16px; line-height:1.65; margin-bottom:14px;}
+  .trainer-stats{display:flex; gap:36px; margin-top:26px;}
+  .stat b{display:block; font-family:'Space Grotesk', sans-serif; font-size:28px; color:var(--lime);}
+  .stat span{font-size:13px; color:var(--muted);}
+  .quote-block{border-left:3px solid var(--accent); padding-left:24px;}
+  .quote-block p{font-size:20px; color:var(--text); font-style:italic; line-height:1.5; margin-bottom:0;}
+
+  /* steps */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:28px;}
+  .step{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px;}
+  .step-num{font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:34px; color:var(--accent); margin-bottom:14px;}
+  .step h3{font-size:18px; margin-bottom:10px;}
+  .step p{color:var(--muted); font-size:14.5px; line-height:1.55;}
+
+  /* final cta */
+  .final-cta{
+    background:linear-gradient(135deg, var(--accent-dim), var(--surface));
+    border:1px solid var(--border); border-radius:24px; padding:64px; text-align:center;
+  }
+  .final-cta h2{font-size:clamp(28px,4vw,40px); margin-bottom:18px;}
+  .final-cta p{color:var(--muted); font-size:17px; max-width:480px; margin:0 auto 32px;}
+
+  footer{border-top:1px solid var(--border); padding:36px 0; }
+  footer .wrap{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;}
+  footer p{color:var(--muted); font-size:13px;}
+
+  @media (max-width: 880px){
+    .hero .wrap{grid-template-columns:1fr; gap:48px;}
+    .hero{padding:48px 0 64px; text-align:left;}
+    .phone-stage{order:-1; margin-bottom:8px;}
+    .phone{width:250px;}
+    .feature-row, .feature-row.reverse{grid-template-columns:1fr; gap:28px;}
+    .feature-row.reverse .f-visual, .feature-row.reverse .f-text{order:initial;}
+    .trainer{grid-template-columns:1fr; padding:36px 24px;}
+    .steps{grid-template-columns:1fr;}
+    .final-cta{padding:44px 24px;}
+    .fb-1, .fb-2{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="brand-mark">X</span> Xcel Online PT</div>
+    <a class="nav-cta" href="#get-started">Get the app</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-text">
+      <p class="kicker"><b>From Xcel Athletics</b> — training built around your week, not the other way around.</p>
+      <h1>Your programs, your progress, your trainer — all in one place.</h1>
+      <p class="lede">Xcel Online PT is the training app I built for my own clients: real programs, nutrition tracking, mobility work, and a direct line to me — whether you train at the gym or from home.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#get-started">Get the app →</a>
+        <a class="btn btn-ghost" href="#features">See what's inside</a>
+      </div>
+      <p class="hero-note">No app store, no download — opens right from your phone's browser.</p>
+    </div>
+    <div class="phone-stage">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="ph-header">
+            <div>
+              <div class="ph-hey">Hey, Jordan</div>
+              <div class="ph-sub">Xcel Online PT</div>
+            </div>
+            <div class="ph-icons"><span>🔔</span><span>📄</span></div>
+          </div>
+          <div class="week-grid">
+            <div class="week-day-lbl">Sun</div><div class="week-day-lbl">Mon</div><div class="week-day-lbl today">Tue</div><div class="week-day-lbl">Wed</div><div class="week-day-lbl">Thu</div><div class="week-day-lbl">Fri</div><div class="week-day-lbl">Sat</div>
+            <div class="week-cell"></div><div class="week-cell filled"></div><div class="week-cell active"></div><div class="week-cell"></div><div class="week-cell filled"></div><div class="week-cell"></div><div class="week-cell filled"></div>
+          </div>
+          <div class="ph-card">
+            <div class="ph-card-title">Lower Body Strength</div>
+            <div class="ph-set-row"><div class="ph-input"></div><div class="ph-input"></div></div>
+            <div class="ph-set-row"><div class="ph-input"></div><div class="ph-input"></div></div>
+            <div class="ph-set-row"><div class="ph-input"></div><div class="ph-input"></div></div>
+            <div class="ph-btn">Save today's workout</div>
+          </div>
+          <div class="ph-tabbar">
+            <div class="ph-tab on"><span class="ph-tab-dot"></span>Today</div>
+            <div class="ph-tab"><span class="ph-tab-dot"></span>Mobility</div>
+            <div class="ph-tab"><span class="ph-tab-dot"></span>Library</div>
+            <div class="ph-tab"><span class="ph-tab-dot"></span>Nutrition</div>
+            <div class="ph-tab"><span class="ph-tab-dot"></span>Progress</div>
+          </div>
+        </div>
+      </div>
+      <div class="float-badge fb-1">🔥 <span><b>6-week</b> streak</span></div>
+      <div class="float-badge fb-2">📷 <span>Barcode <b>scanned</b></span></div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What's inside</p>
+      <h2>Everything you need, nothing you'll never open.</h2>
+      <p class="desc">This isn't a generic fitness app with a workout plan bolted on. It's built specifically around how I actually coach — so what you see here is what training with me looks like.</p>
+    </div>
+
+    <div class="feature-row">
+      <div class="f-text">
+        <span class="f-tag">Your week, your call</span>
+        <h3>A weekly calendar that moves with your life</h3>
+        <p>See your whole week laid out — not just "today." Can't make leg day on Tuesday? Move it to Thursday yourself. Your program stays intact, your week just flexes around what actually happens.</p>
+      </div>
+      <div class="f-visual">
+        <div class="week-grid" style="margin-bottom:0;">
+          <div class="week-day-lbl">S</div><div class="week-day-lbl">M</div><div class="week-day-lbl">T</div><div class="week-day-lbl today">W</div><div class="week-day-lbl">T</div><div class="week-day-lbl">F</div><div class="week-day-lbl">S</div>
+          <div class="week-cell"></div><div class="week-cell filled"></div><div class="week-cell"></div><div class="week-cell active"></div><div class="week-cell filled"></div><div class="week-cell"></div><div class="week-cell filled"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row reverse">
+      <div class="f-text">
+        <span class="f-tag">Nutrition</span>
+        <h3>Scan a barcode, done — plus favorites for the meals you eat every week</h3>
+        <p>Real food data, not guesswork. Search anything, scan a package, or save your regulars for one-tap logging. Log calories burned from your watch too, so you can see intake and output side by side.</p>
+      </div>
+      <div class="f-visual">
+        <div class="ph-card" style="margin-bottom:0;">
+          <div class="ph-card-title">Today's totals</div>
+          <div class="macro-bar"><div class="macro-fill" style="width:72%"></div></div>
+          <div class="macro-bar"><div class="macro-fill" style="width:54%"></div></div>
+          <div class="macro-bar"><div class="macro-fill" style="width:88%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="f-text">
+        <span class="f-tag">Mobility &amp; recovery</span>
+        <h3>Real fixes for tight hips, bad posture, and desk-job backs</h3>
+        <p>Hip flexor mobility, glute activation, upper-back posture work, low-back relief — dedicated routines that run alongside your regular program, each with a video showing exactly how it's done.</p>
+      </div>
+      <div class="f-visual">
+        <div class="mini-row"><div class="mini-icon"></div><div class="mini-lines"><div class="mini-line"></div><div class="mini-line short"></div></div></div>
+        <div class="mini-row"><div class="mini-icon"></div><div class="mini-lines"><div class="mini-line"></div><div class="mini-line short"></div></div></div>
+      </div>
+    </div>
+
+    <div class="feature-row reverse">
+      <div class="f-text">
+        <span class="f-tag">Stay connected</span>
+        <h3>Message me directly — photos, videos, form checks</h3>
+        <p>Got a question about a lift? Send a quick video and I'll get back to you. Plus a community wall where everyone training with me can share wins, ask questions, and keep each other going.</p>
+      </div>
+      <div class="f-visual">
+        <div class="mini-row"><div class="mini-icon" style="background:var(--accent-dim)"></div><div class="mini-lines"><div class="mini-line" style="width:70%"></div></div></div>
+        <div class="mini-row" style="justify-content:flex-end;"><div class="mini-lines" style="flex:none; width:60%;"><div class="mini-line"></div><div class="mini-line short"></div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="trainer">
+      <div>
+        <div class="trainer-badge">X</div>
+        <div class="quote-block">
+          <p>"I built this because my clients deserved better than a generic app with my name slapped on it."</p>
+        </div>
+        <div class="trainer-stats">
+          <div class="stat"><b>10</b><span>years coaching</span></div>
+          <div class="stat"><b>1:1</b><span>real coaching</span></div>
+        </div>
+      </div>
+      <div>
+        <h2>Coached by someone who's actually done this for a decade.</h2>
+        <p>I'm Xaviar — you might know me as one of the owners of Neighbors, but personal training has been my craft for the last 10 years. This app isn't a side project or a template; it's how I run my actual coaching practice, built around how real training works.</p>
+        <p>Whether you're training with me in person or fully online, you're getting the same programming, the same attention, and the same accountability — just delivered through something built specifically for it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="get-started">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Getting started</p>
+      <h2>Up and running in under a minute.</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Get your invite</h3>
+        <p>Reach out and I'll send you a link to set up your own name and PIN — no forms, no accounts to manage.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Add it to your home screen</h3>
+        <p>One tap and it sits on your phone like any other app — no App Store, no download, no storage taken up.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Start training</h3>
+        <p>Your program's already waiting. Log your first workout, and I'll see it come through on my end.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="final-cta">
+      <h2>Ready to actually stick with it this time?</h2>
+      <p>Whether you're local to the gym or training with me from anywhere, this is where it happens now.</p>
+      <a class="btn btn-primary" href="mailto:xcelathleticspt@gmail.com?subject=I want to get started with Xcel Online PT">Reach out to get started →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand"><span class="brand-mark" style="width:24px;height:24px;font-size:11px;">X</span> Xcel Online PT</div>
+    <p>© 2026 Xcel Athletics. Built for real coaching, not just a workout log.</p>
+  </div>
+</footer>
+
+</body>
+</html>
