@@ -2727,7 +2727,81 @@ function ProgramsTab({ clients, exercises }) {
 }
 
 function MessagesTab({ clients }) {
-  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || "");
+  const [selectedClientId, setSelectedClientId] = useState(null);
+  const [previews, setPreviews] = useState([]);
+  const [loadingPreviews, setLoadingPreviews] = useState(true);
+
+  const loadPreviews = async () => {
+    setLoadingPreviews(true);
+    const results = await Promise.all(clients.map(async (c) => {
+      const data = await sGet(`client:${c.id}`, { messages: [] });
+      const msgs = data.messages || [];
+      const last = msgs[msgs.length - 1];
+      return {
+        id: c.id,
+        name: c.name,
+        lastPreview: last ? (last.text || (last.mediaType === "video" ? "📹 Video" : "📷 Photo")) : null,
+        lastDate: last ? last.date : null,
+        lastFrom: last ? last.from : null,
+      };
+    }));
+    results.sort((a, b) => {
+      if (!a.lastDate && !b.lastDate) return a.name.localeCompare(b.name);
+      if (!a.lastDate) return 1;
+      if (!b.lastDate) return -1;
+      return b.lastDate.localeCompare(a.lastDate);
+    });
+    setPreviews(results);
+    setLoadingPreviews(false);
+  };
+
+  useEffect(() => {
+    loadPreviews();
+  }, [clients]);
+
+  if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first.</div>;
+
+  if (selectedClientId) {
+    const client = clients.find((c) => c.id === selectedClientId);
+    return (
+      <div>
+        <button
+          onClick={() => { setSelectedClientId(null); loadPreviews(); }}
+          style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: 0 }}
+        >
+          <ChevronLeft size={16} /> All messages
+        </button>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 14 }}>{client?.name}</div>
+        <MessageThread clientId={selectedClientId} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 16 }}>Messages</div>
+      {loadingPreviews ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading…</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {previews.map((p) => (
+            <Card key={p.id} onClick={() => setSelectedClientId(p.id)} style={{ padding: 14, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 3 }}>
+                  {p.lastPreview ? `${p.lastFrom === "trainer" ? "You: " : ""}${p.lastPreview}` : "No messages yet"}
+                </div>
+              </div>
+              {p.lastDate && <div style={{ fontSize: 11, color: COLORS.textMuted, flexShrink: 0 }}>{fmtDate(p.lastDate.slice(0, 10))}</div>}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageThread({ clientId }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [mediaUrl, setMediaUrl] = useState(null);
@@ -2738,12 +2812,12 @@ function MessagesTab({ clients }) {
   const mediaInputRef = useRef(null);
 
   useEffect(() => {
-    if (!selectedClientId) return;
+    if (!clientId) return;
     (async () => {
-      const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+      const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
       setMessages(data.messages || []);
     })();
-  }, [selectedClientId]);
+  }, [clientId]);
 
   const handleMediaSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -2754,8 +2828,8 @@ function MessagesTab({ clients }) {
     setMediaError("");
     try {
       const { url, fileId } = isVideo
-        ? await uploadVideo(file, selectedClientId, "message-media")
-        : await uploadImage(file, selectedClientId, "message-media");
+        ? await uploadVideo(file, clientId, "message-media")
+        : await uploadImage(file, clientId, "message-media");
       setMediaUrl(url);
       setMediaFileId(fileId);
       setMediaType(isVideo ? "video" : "image");
@@ -2774,9 +2848,9 @@ function MessagesTab({ clients }) {
 
   const send = async () => {
     if (!text.trim() && !mediaUrl) return;
-    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
     const next = [...(data.messages || []), { id: uid(), from: "trainer", text: text.trim(), mediaUrl: mediaUrl || null, mediaFileId: mediaFileId || null, mediaType: mediaType || null, date: new Date().toISOString() }];
-    await sSet(`client:${selectedClientId}`, { ...data, messages: next });
+    await sSet(`client:${clientId}`, { ...data, messages: next });
     setMessages(next);
     sendPush([data.pushSubscription], "New message from your trainer", text.trim() ? text.trim().slice(0, 120) : mediaType === "video" ? "Sent a video" : "Sent a photo");
     setText("");
@@ -2786,22 +2860,16 @@ function MessagesTab({ clients }) {
   };
 
   const removeMessage = async (id) => {
-    const data = await sGet(`client:${selectedClientId}`, { program: { days: [] }, logs: [], messages: [] });
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
     const target = (data.messages || []).find((m) => m.id === id);
     const next = (data.messages || []).filter((m) => m.id !== id);
-    await sSet(`client:${selectedClientId}`, { ...data, messages: next });
+    await sSet(`client:${clientId}`, { ...data, messages: next });
     setMessages(next);
     deleteImageKitFile(target?.mediaFileId);
   };
 
-  if (clients.length === 0) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first.</div>;
-
   return (
     <div>
-      <select style={{ ...inputStyle, maxWidth: 260, marginBottom: 16 }} value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}>
-        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
-
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, maxHeight: 320, overflowY: "auto" }}>
         {messages.length === 0 && <div style={{ color: COLORS.textMuted, fontSize: 13 }}>No messages yet.</div>}
         {messages.map((m) => (
