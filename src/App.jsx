@@ -1448,7 +1448,7 @@ function LoginScreen({ clients, onClientLogin, onTrainerClick }) {
       <style>{FONT_STACK}</style>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 72, height: 72, borderRadius: 16, overflow: "hidden", marginBottom: 14 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 132, height: 132, borderRadius: 26, overflow: "hidden", marginBottom: 16 }}>
             <img src="/logo-mark.png" alt="Xcel Online PT" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
           <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>
