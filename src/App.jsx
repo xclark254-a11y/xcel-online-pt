@@ -1946,11 +1946,68 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
   );
 }
 
-function InviteByEmail({ onSent }) {
+function InquiriesSection({ onConvert }) {
+  const [inquiries, setInquiries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    const list = await sGet("app:inquiries", []);
+    setInquiries([...list].sort((a, b) => b.date.localeCompare(a.date)));
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const dismiss = async (id) => {
+    const list = await sGet("app:inquiries", []);
+    await sSet("app:inquiries", list.filter((i) => i.id !== id));
+    load();
+  };
+
+  const convert = (inq) => {
+    onConvert(inq);
+    dismiss(inq.id);
+  };
+
+  if (loading || inquiries.length === 0) return null;
+
+  return (
+    <Card style={{ marginBottom: 16, borderColor: COLORS.accent }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Megaphone size={16} color={COLORS.accent} />
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>New sign-up requests ({inquiries.length})</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {inquiries.map((inq) => (
+          <div key={inq.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{inq.name}</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{inq.email}</div>
+            {inq.message && <div style={{ fontSize: 12, color: COLORS.text, marginTop: 6, fontStyle: "italic" }}>"{inq.message}"</div>}
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 6 }}>{new Date(inq.date).toLocaleString()}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <Btn style={{ padding: "6px 12px", fontSize: 11 }} onClick={() => convert(inq)}>Send them an invite</Btn>
+              <Btn variant="ghost" style={{ padding: "6px 12px", fontSize: 11 }} onClick={() => dismiss(inq.id)}>Dismiss</Btn>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function InviteByEmail({ onSent, prefill }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    if (prefill) {
+      setName(prefill.name || "");
+      setEmail(prefill.email || "");
+    }
+  }, [prefill]);
 
   const send = async () => {
     if (!name.trim() || !email.trim()) return;
@@ -2048,6 +2105,7 @@ function ClientsTab({ clients, exercises, onRefresh }) {
   const [pin, setPin] = useState("");
   const [editing, setEditing] = useState(null);
   const [showPaused, setShowPaused] = useState(false);
+  const [prefillInvite, setPrefillInvite] = useState(null);
 
   const addClient = async () => {
     if (!name.trim() || !pin.trim()) return;
@@ -2105,7 +2163,8 @@ function ClientsTab({ clients, exercises, onRefresh }) {
         </Card>
       )}
 
-      <InviteByEmail onSent={() => setInviteRefresh((n) => n + 1)} />
+      <InquiriesSection onConvert={(inq) => setPrefillInvite({ name: inq.name, email: inq.email })} />
+      <InviteByEmail onSent={() => setInviteRefresh((n) => n + 1)} prefill={prefillInvite} />
       <PendingInvites refreshKey={inviteRefresh} />
 
       {pausedClients.length > 0 && (
