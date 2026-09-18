@@ -2737,12 +2737,14 @@ function MessagesTab({ clients }) {
       const data = await sGet(`client:${c.id}`, { messages: [] });
       const msgs = data.messages || [];
       const last = msgs[msgs.length - 1];
+      const unread = !!last && last.from === "client" && (!data.trainerLastRead || last.date > data.trainerLastRead);
       return {
         id: c.id,
         name: c.name,
         lastPreview: last ? (last.text || (last.mediaType === "video" ? "📹 Video" : "📷 Photo")) : null,
         lastDate: last ? last.date : null,
         lastFrom: last ? last.from : null,
+        unread,
       };
     }));
     results.sort((a, b) => {
@@ -2785,14 +2787,25 @@ function MessagesTab({ clients }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {previews.map((p) => (
-            <Card key={p.id} onClick={() => setSelectedClientId(p.id)} style={{ padding: 14, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 3 }}>
-                  {p.lastPreview ? `${p.lastFrom === "trainer" ? "You: " : ""}${p.lastPreview}` : "No messages yet"}
+            <Card
+              key={p.id}
+              onClick={() => setSelectedClientId(p.id)}
+              style={{
+                padding: 14, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+                borderColor: p.unread ? COLORS.accent : COLORS.border,
+                background: p.unread ? COLORS.accentDim : COLORS.surface,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                {p.unread && <div style={{ width: 9, height: 9, borderRadius: 999, background: COLORS.accent, flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: p.unread ? 700 : 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: p.unread ? COLORS.text : COLORS.textMuted, fontWeight: p.unread ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 3 }}>
+                    {p.lastPreview ? `${p.lastFrom === "trainer" ? "You: " : ""}${p.lastPreview}` : "No messages yet"}
+                  </div>
                 </div>
               </div>
-              {p.lastDate && <div style={{ fontSize: 11, color: COLORS.textMuted, flexShrink: 0 }}>{fmtDate(p.lastDate.slice(0, 10))}</div>}
+              {p.lastDate && <div style={{ fontSize: 11, color: p.unread ? COLORS.accent : COLORS.textMuted, fontWeight: p.unread ? 700 : 400, flexShrink: 0 }}>{fmtDate(p.lastDate.slice(0, 10))}</div>}
             </Card>
           ))}
         </div>
@@ -2816,6 +2829,7 @@ function MessageThread({ clientId }) {
     (async () => {
       const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
       setMessages(data.messages || []);
+      await sSet(`client:${clientId}`, { ...data, trainerLastRead: new Date().toISOString() });
     })();
   }, [clientId]);
 
