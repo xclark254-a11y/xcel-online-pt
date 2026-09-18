@@ -18,6 +18,6 @@
 //
 // Until real values are entered here, invites still get saved and you can
 // share the signup link yourself, but the automatic email won't send.
-export const EMAILJS_SERVICE_ID = "YOUR_EMAILJS_SERVICE_ID";
-export const EMAILJS_TEMPLATE_ID = "YOUR_EMAILJS_TEMPLATE_ID";
-export const EMAILJS_PUBLIC_KEY = "YOUR_EMAILJS_PUBLIC_KEY";
+export const EMAILJS_SERVICE_ID = "service_ig0sgb6";
+export const EMAILJS_TEMPLATE_ID = "template_rt4wsu3";
+export const EMAILJS_PUBLIC_KEY = "yTGW10QzA0v4Ppo55";
