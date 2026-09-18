@@ -333,6 +333,35 @@ function macrosForOz(per100g, oz) {
   };
 }
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+const addDaysISO = (iso, days) => {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+// Exclusive end date for a program block with a set duration, or null if it runs indefinitely.
+const programEndDate = (program) => {
+  if (!program?.startDate || !program?.weeks) return null;
+  return addDaysISO(program.startDate, program.weeks * 7);
+};
+
+// Promotes any due program from the queue into the active slot. If the client
+// hasn't opened the app in a while and multiple queued programs have come due,
+// only the most recent one is promoted — the others are skipped, not stacked.
+function promoteScheduledPrograms(data) {
+  const today = todayISO();
+  const queue = [...(data.programQueue || [])];
+  const due = queue.filter((q) => q.startDate <= today);
+  if (due.length === 0) return data;
+  const toPromote = due.reduce((a, b) => (a.startDate > b.startDate ? a : b));
+  const remaining = queue.filter((q) => q.startDate > today);
+  return {
+    ...data,
+    program: { days: toPromote.days, name: toPromote.name, startDate: toPromote.startDate, weeks: toPromote.weeks },
+    programQueue: remaining,
+  };
+}
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 function resolveLogExerciseName(log, entry, program, exercises) {
@@ -1014,6 +1043,153 @@ const TEMPLATE_PROGRAMS = [
       },
     ],
   },
+  {
+    id: "tpl-6wk-challenge-p1",
+    name: "6-Week Challenge — Phase 1: Kickoff (Wks 1-2)",
+    level: "All levels",
+    description: "Part 1 of 3 in the 6-Week Transformation Challenge (launch program). Foundation building. Assign Phase 2 after 2 weeks.",
+    days: [
+      {
+        name: "Day 1 — Upper Body",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 3, reps: "12" },
+          { exerciseName: "Chest-Supported Row", sets: 3, reps: "12" },
+          { exerciseName: "Machine Shoulder Press", sets: 3, reps: "12" },
+          { exerciseName: "Wide-Grip Lat Pulldown", sets: 3, reps: "12" },
+          { exerciseName: "Cable Lateral Raise", sets: 2, reps: "15" },
+          { exerciseName: "Tricep Pushdown", sets: 2, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body",
+        exercises: [
+          { exerciseName: "Leg Press", sets: 3, reps: "12" },
+          { exerciseName: "Romanian Deadlift", sets: 3, reps: "12" },
+          { exerciseName: "Dumbbell Step-Up", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Standing Calf Raise", sets: 2, reps: "15" },
+          { exerciseName: "Plank", sets: 2, reps: "30 sec" },
+        ],
+      },
+      {
+        name: "Day 3 — Full Body Metabolic Circuit",
+        exercises: [
+          { exerciseName: "Kettlebell Swing", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Push-Up", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Inverted Row", sets: 3, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Mountain Climber", sets: 3, reps: "45 sec work / 15 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes & Core",
+        exercises: [
+          { exerciseName: "Glute Bridge", sets: 3, reps: "15" },
+          { exerciseName: "Cable Kickback", sets: 3, reps: "12 per leg" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "12" },
+          { exerciseName: "Face Pull", sets: 3, reps: "15" },
+          { exerciseName: "Dead Bug", sets: 2, reps: "15" },
+          { exerciseName: "Russian Twist", sets: 2, reps: "15" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-6wk-challenge-p2",
+    name: "6-Week Challenge — Phase 2: Push (Wks 3-4)",
+    level: "All levels",
+    description: "Part 2 of 3 in the 6-Week Transformation Challenge. Heavier weight, more supersets. Assign after Phase 1, then move to Phase 3.",
+    days: [
+      {
+        name: "Day 1 — Upper Body Superset",
+        exercises: [
+          { exerciseName: "Incline Dumbbell Press", sets: 4, reps: "10" },
+          { exerciseName: "Barbell Row", sets: 4, reps: "10" },
+          { exerciseName: "Arnold Press", sets: 3, reps: "10" },
+          { exerciseName: "Lat Pulldown", sets: 3, reps: "10" },
+          { exerciseName: "Dumbbell Fly", sets: 3, reps: "12" },
+          { exerciseName: "Rear Delt Fly", sets: 3, reps: "12" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body",
+        exercises: [
+          { exerciseName: "Front Squat", sets: 4, reps: "10" },
+          { exerciseName: "Sumo Deadlift", sets: 3, reps: "10" },
+          { exerciseName: "Bulgarian Split Squat", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Leg Extension", sets: 3, reps: "15" },
+          { exerciseName: "Seated Leg Curl", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Full Body Metabolic Circuit",
+        exercises: [
+          { exerciseName: "Kettlebell Clean and Press", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Box Jump", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Single-Arm Dumbbell Row", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Battle Ropes", sets: 4, reps: "40 sec work / 20 sec rest" },
+          { exerciseName: "Side Plank", sets: 4, reps: "40 sec work / 20 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes & Core",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 4, reps: "10" },
+          { exerciseName: "Curtsy Lunge", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Cable Pull-Through", sets: 3, reps: "12" },
+          { exerciseName: "Hanging Knee Raise", sets: 3, reps: "12" },
+          { exerciseName: "Plank", sets: 3, reps: "30 sec" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "tpl-6wk-challenge-p3",
+    name: "6-Week Challenge — Phase 3: Finish Strong (Wks 5-6)",
+    level: "All levels",
+    description: "Part 3 of 3, the final phase of the 6-Week Transformation Challenge. Peak effort weeks to close out the program.",
+    days: [
+      {
+        name: "Day 1 — Upper Body",
+        exercises: [
+          { exerciseName: "Barbell Bench Press", sets: 4, reps: "6-8" },
+          { exerciseName: "Pull-Up", sets: 4, reps: "6-8" },
+          { exerciseName: "Arnold Press", sets: 3, reps: "10" },
+          { exerciseName: "Seated Cable Row", sets: 3, reps: "10" },
+          { exerciseName: "Lateral Raise", sets: 3, reps: "15" },
+          { exerciseName: "Tricep Pushdown", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 2 — Lower Body",
+        exercises: [
+          { exerciseName: "Barbell Back Squat", sets: 4, reps: "6-8" },
+          { exerciseName: "Romanian Deadlift", sets: 4, reps: "8" },
+          { exerciseName: "Walking Lunge", sets: 3, reps: "12 per leg" },
+          { exerciseName: "Leg Press", sets: 3, reps: "15" },
+        ],
+      },
+      {
+        name: "Day 3 — Metabolic Finisher Challenge",
+        exercises: [
+          { exerciseName: "Kettlebell Swing", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Slam Ball Slam", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Battle Ropes", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Box Jump", sets: 6, reps: "45 sec work / 15 sec rest" },
+          { exerciseName: "Mountain Climber", sets: 6, reps: "45 sec work / 15 sec rest" },
+        ],
+      },
+      {
+        name: "Day 4 — Glutes, Core & Finish Line",
+        exercises: [
+          { exerciseName: "Hip Thrust", sets: 4, reps: "8" },
+          { exerciseName: "Single-Leg RDL", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Cable Kickback", sets: 3, reps: "10 per leg" },
+          { exerciseName: "Plank", sets: 3, reps: "max time" },
+          { exerciseName: "Russian Twist", sets: 3, reps: "20" },
+        ],
+      },
+    ],
+  },
 ];
 
 const MOBILITY_ROUTINES = [
@@ -1318,8 +1494,10 @@ export default function App() {
   };
 
   const loadClientData = async (clientId) => {
-    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
-    setClientData(data);
+    const raw = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], nutrition: {} });
+    const promoted = promoteScheduledPrograms(raw);
+    if (promoted !== raw) await sSet(`client:${clientId}`, promoted);
+    setClientData(promoted);
   };
 
   const saveClientData = async (clientId, data) => {
@@ -1975,6 +2153,7 @@ function ClientsTab({ clients, exercises, onRefresh }) {
             <NutritionViewer clientId={c.id} />
             <ProgressPhotosViewer clientId={c.id} />
             <WorkoutLogViewer clientId={c.id} exercises={exercises} />
+            <ProgramScheduleViewer clientId={c.id} />
           </Card>
         ))}
       </div>
@@ -2218,6 +2397,74 @@ function WorkoutLogViewer({ clientId, exercises }) {
   );
 }
 
+function ProgramScheduleViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (!open) {
+      setLoading(true);
+      const raw = await sGet(`client:${clientId}`, { program: { days: [] }, programQueue: [] });
+      const promoted = promoteScheduledPrograms(raw);
+      if (promoted !== raw) await sSet(`client:${clientId}`, promoted);
+      setData(promoted);
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  const removeQueued = async (id) => {
+    const nextQueue = (data.programQueue || []).filter((q) => q.id !== id);
+    const next = { ...data, programQueue: nextQueue };
+    await sSet(`client:${clientId}`, next);
+    setData(next);
+  };
+
+  const current = data?.program;
+  const currentEnd = current ? programEndDate(current) : null;
+  const queue = [...(data?.programQueue || [])].sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide program schedule" : "View program schedule"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}`, borderRadius: 8, padding: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent }}>NOW RUNNING</div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2 }}>{current?.name || "Untitled program"}</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+              {current?.startDate ? `Started ${fmtDate(current.startDate)}` : "No start date on record"}
+              {currentEnd ? ` · Ends ${fmtDate(addDaysISO(currentEnd, -1))}` : " · Runs indefinitely"}
+            </div>
+          </div>
+          {queue.length === 0 ? (
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Nothing scheduled to come after this.</div>
+          ) : (
+            queue.map((q) => {
+              const end = programEndDate(q);
+              return (
+                <div key={q.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{q.name || "Untitled program"}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                      Starts {fmtDate(q.startDate)}{end ? ` · Ends ${fmtDate(addDaysISO(end, -1))}` : " · Runs indefinitely"}
+                    </div>
+                  </div>
+                  <button onClick={() => removeQueued(q.id)} title="Remove from schedule" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", flexShrink: 0 }}><Trash2 size={13} /></button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
   const [pin, setPin] = useState(client.pin);
@@ -2356,8 +2603,9 @@ function VideoLinkEditor({ exercise, onSaved }) {
 function TemplatesTab({ clients, exercises }) {
   const [expandedId, setExpandedId] = useState(null);
   const [assignTarget, setAssignTarget] = useState({}); // templateId -> clientId
+  const [weeksTarget, setWeeksTarget] = useState({}); // templateId -> weeks
   const [confirming, setConfirming] = useState(null); // templateId awaiting confirm
-  const [status, setStatus] = useState({}); // templateId -> "done" | "missing:name1,name2"
+  const [status, setStatus] = useState({}); // templateId -> status message
 
   const resolveDays = (template) => {
     const missing = [];
@@ -2373,15 +2621,33 @@ function TemplatesTab({ clients, exercises }) {
     return { days, missing };
   };
 
-  const assign = async (template) => {
+  const assignNow = async (template) => {
     const clientId = assignTarget[template.id];
     if (!clientId) return;
+    const weeks = Number(weeksTarget[template.id]) || null;
     const { days, missing } = resolveDays(template);
     const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [] });
-    await sSet(`client:${clientId}`, { ...data, program: { days } });
-    setStatus({ ...status, [template.id]: missing.length ? `Assigned — couldn't find: ${missing.join(", ")}` : "Assigned successfully" });
+    await sSet(`client:${clientId}`, { ...data, program: { days, name: template.name, startDate: todayISO(), weeks } });
+    setStatus({ ...status, [template.id]: missing.length ? `Started now — couldn't find: ${missing.join(", ")}` : "Started now" });
     setConfirming(null);
     setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 4000);
+  };
+
+  const addToSchedule = async (template) => {
+    const clientId = assignTarget[template.id];
+    if (!clientId) return;
+    const weeks = Number(weeksTarget[template.id]) || null;
+    const { days, missing } = resolveDays(template);
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [], messages: [], programQueue: [] });
+    const queue = data.programQueue || [];
+    const currentEnd = programEndDate(data.program);
+    const queueEnds = queue.map((q) => programEndDate(q)).filter(Boolean);
+    const latestEnd = [currentEnd, ...queueEnds].filter(Boolean).sort().pop();
+    const startDate = latestEnd || addDaysISO(todayISO(), 1);
+    const nextQueue = [...queue, { id: uid(), name: template.name, days, startDate, weeks }];
+    await sSet(`client:${clientId}`, { ...data, programQueue: nextQueue });
+    setStatus({ ...status, [template.id]: missing.length ? `Scheduled to start ${fmtDate(startDate)} — couldn't find: ${missing.join(", ")}` : `Scheduled to start ${fmtDate(startDate)}` });
+    setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
   };
 
   if (clients.length === 0) {
@@ -2391,7 +2657,7 @@ function TemplatesTab({ clients, exercises }) {
   return (
     <div>
       <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Program templates</div>
-      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Assigning a template replaces that client's current program.</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>"Start now" replaces their current program immediately. "Add to schedule" queues it to begin right after their current program (or last scheduled one) ends.</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {TEMPLATE_PROGRAMS.map((t) => (
@@ -2425,30 +2691,49 @@ function TemplatesTab({ clients, exercises }) {
 
             <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
               <select
-                style={{ ...inputStyle, maxWidth: 200 }}
+                style={{ ...inputStyle, maxWidth: 190 }}
                 value={assignTarget[t.id] || ""}
                 onChange={(e) => setAssignTarget({ ...assignTarget, [t.id]: e.target.value })}
               >
                 <option value="">Choose a client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              <input
+                type="number"
+                min="1"
+                placeholder="Weeks"
+                title="How many weeks this program runs before the next scheduled one can start (leave blank to run indefinitely)"
+                style={{ ...inputStyle, width: 80 }}
+                value={weeksTarget[t.id] || ""}
+                onChange={(e) => setWeeksTarget({ ...weeksTarget, [t.id]: e.target.value })}
+              />
               {confirming === t.id ? (
                 <>
                   <span style={{ fontSize: 11, color: COLORS.danger }}>Replace their current program?</span>
-                  <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assign(t)}>Yes, assign</Btn>
+                  <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assignNow(t)}>Yes, start now</Btn>
                   <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(null)}>Cancel</Btn>
                 </>
               ) : (
-                <Btn
-                  style={{ padding: "8px 12px", fontSize: 12 }}
-                  disabled={!assignTarget[t.id]}
-                  onClick={() => setConfirming(t.id)}
-                >
-                  Assign to client
-                </Btn>
+                <>
+                  <Btn
+                    style={{ padding: "8px 12px", fontSize: 12 }}
+                    disabled={!assignTarget[t.id]}
+                    onClick={() => setConfirming(t.id)}
+                  >
+                    Start now
+                  </Btn>
+                  <Btn
+                    variant="subtle"
+                    style={{ padding: "8px 12px", fontSize: 12 }}
+                    disabled={!assignTarget[t.id]}
+                    onClick={() => addToSchedule(t)}
+                  >
+                    Add to schedule
+                  </Btn>
+                </>
               )}
             </div>
-            {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Assigned success") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
+            {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Started") || status[t.id].startsWith("Scheduled") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
           </Card>
         ))}
       </div>
