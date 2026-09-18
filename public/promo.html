@@ -109,6 +109,17 @@
   }
   .final-cta h2{font-size:clamp(28px,4vw,40px); margin-bottom:18px;}
   .final-cta p{color:var(--muted); font-size:17px; max-width:480px; margin:0 auto 32px;}
+  .signup-form{max-width:380px; margin:0 auto; text-align:left;}
+  .signup-form input, .signup-form textarea{
+    width:100%; background:var(--surface-alt); border:1px solid var(--border); border-radius:10px;
+    padding:13px 14px; color:var(--text); font-family:'Inter', sans-serif; font-size:15px; margin-bottom:12px;
+  }
+  .signup-form textarea{resize:vertical; min-height:70px;}
+  .signup-form input:focus, .signup-form textarea:focus{outline:none; border-color:var(--accent);}
+  .signup-status{font-size:13px; margin-top:12px; min-height:18px;}
+  .signup-status.err{color:#ff8a70;}
+  .signup-status.ok{color:var(--lime);}
+  .btn:disabled{opacity:0.6; cursor:default;}
 
   footer{border-top:1px solid var(--border); padding:36px 0; }
   footer .wrap{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;}
@@ -255,8 +266,14 @@
   <div class="wrap">
     <div class="final-cta">
       <h2>Your turn to be the next transformation.</h2>
-      <p>Whether you're local to the gym or training with me from anywhere, this is where it happens now.</p>
-      <a class="btn btn-primary" href="mailto:xcelathleticspt@gmail.com?subject=I want to get started with Xcel Online PT">Reach out to get started →</a>
+      <p>Whether you're local to the gym or training with me from anywhere, this is where it happens now. Drop your info below and I'll personally reach out to get you set up.</p>
+      <form class="signup-form" id="signup-form">
+        <input type="text" id="su-name" placeholder="Your name" required />
+        <input type="email" id="su-email" placeholder="Your email" required />
+        <textarea id="su-message" placeholder="Anything you want me to know? (optional)"></textarea>
+        <button type="submit" class="btn btn-primary" id="su-submit" style="width:100%; justify-content:center;">Sign me up →</button>
+        <div class="signup-status" id="su-status"></div>
+      </form>
     </div>
   </div>
 </section>
@@ -267,6 +284,96 @@
     <p>© 2026 Xcel Athletics. Built for real coaching, not just a workout log.</p>
   </div>
 </footer>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // Paste the EXACT SAME Firebase config values you used in src/firebase.js —
+  // this page is a separate static file, so it needs its own copy of them.
+  const firebaseConfig = {
+  apiKey: "AIzaSyBZkQd5e5iYg9hMCLnkAOD2YiDizJxzt0U",
+  authDomain: "xcel-online-pt.firebaseapp.com",
+  projectId: "xcel-online-pt",
+  storageBucket: "xcel-online-pt.firebasestorage.app",
+  messagingSenderId: "284464804484",
+  appId: "1:284464804484:web:f6c4e075b73abed83788d1",
+  measurementId: "G-BY7131KY4K"};
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+
+  async function sGet(key, fallback) {
+    try {
+      const ref = doc(db, "appdata", key);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return fallback;
+      return JSON.parse(snap.data().value);
+    } catch (e) {
+      console.error("Firestore get error:", e);
+      return fallback;
+    }
+  }
+  async function sSet(key, value) {
+    try {
+      const ref = doc(db, "appdata", key);
+      await setDoc(ref, { value: JSON.stringify(value) });
+      return true;
+    } catch (e) {
+      console.error("Firestore set error:", e);
+      return false;
+    }
+  }
+
+  const form = document.getElementById("signup-form");
+  const statusEl = document.getElementById("su-status");
+  const submitBtn = document.getElementById("su-submit");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("su-name").value.trim();
+    const email = document.getElementById("su-email").value.trim();
+    const message = document.getElementById("su-message").value.trim();
+    if (!name || !email) return;
+
+    submitBtn.disabled = true;
+    statusEl.textContent = "Sending…";
+    statusEl.className = "signup-status";
+
+    try {
+      const list = await sGet("app:inquiries", []);
+      const inquiry = {
+        id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+        name, email, message,
+        date: new Date().toISOString(),
+      };
+      const ok = await sSet("app:inquiries", [...list, inquiry]);
+      if (!ok) throw new Error("save failed");
+
+      const trainerSub = await sGet("app:trainerPushSubscription", null);
+      if (trainerSub) {
+        fetch("/api/send-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscriptions: [trainerSub],
+            title: "New sign-up request!",
+            body: `${name} wants to join Xcel Online PT`,
+            url: "/",
+          }),
+        }).catch(() => {});
+      }
+
+      form.reset();
+      statusEl.textContent = "You're in! I'll be in touch soon.";
+      statusEl.className = "signup-status ok";
+    } catch (err) {
+      statusEl.textContent = "Something went wrong — try again, or email xcelathleticspt@gmail.com directly.";
+      statusEl.className = "signup-status err";
+    }
+    submitBtn.disabled = false;
+  });
+</script>
 
 </body>
 </html>
