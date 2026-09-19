@@ -2662,12 +2662,183 @@ function VideoLinkEditor({ exercise, onSaved }) {
   );
 }
 
+// ============================================================
+// Custom workout templates: build one from scratch, or copy an existing one and tweak it.
+// Saved in Firestore under the key "app:customTemplates".
+const TEMPLATE_LEVELS = ["Beginner", "Intermediate", "Advanced", "All levels"];
+
+function blankTemplate() {
+  return { id: `tpl-custom-${uid()}`, name: "", level: "Beginner", description: "", days: [{ name: "Day 1", exercises: [] }] };
+}
+
+function copyTemplate(t) {
+  return {
+    id: `tpl-custom-${uid()}`,
+    name: `${t.name} (copy)`,
+    level: t.level || "Beginner",
+    description: t.description || "",
+    days: t.days.map((d) => ({
+      name: d.name,
+      exercises: d.exercises.map((e) => ({ exerciseName: e.exerciseName, sets: e.sets, reps: e.reps })),
+    })),
+  };
+}
+
+function TemplateBuilder({ initial, mode, exercises, onSave, onCancel }) {
+  const [name, setName] = useState(initial.name || "");
+  const [level, setLevel] = useState(initial.level || "Beginner");
+  const [description, setDescription] = useState(initial.description || "");
+  const [days, setDays] = useState(() =>
+    initial.days.map((d) => ({ key: uid(), name: d.name, exercises: d.exercises.map((e) => ({ key: uid(), ...e })) }))
+  );
+  const [error, setError] = useState("");
+
+  const byMuscle = useMemo(() => {
+    const groups = {};
+    [...exercises].sort((a, b) => a.name.localeCompare(b.name)).forEach((e) => {
+      const g = e.muscle || "Other";
+      (groups[g] = groups[g] || []).push(e);
+    });
+    return groups;
+  }, [exercises]);
+
+  const updateDay = (key, patch) => setDays((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  const addDay = () => setDays((ds) => [...ds, { key: uid(), name: `Day ${ds.length + 1}`, exercises: [] }]);
+  const removeDay = (key) => setDays((ds) => ds.filter((d) => d.key !== key));
+
+  const addExercise = (dayKey, exerciseName) => {
+    if (!exerciseName) return;
+    setDays((ds) =>
+      ds.map((d) => (d.key === dayKey ? { ...d, exercises: [...d.exercises, { key: uid(), exerciseName, sets: 3, reps: "10-12" }] } : d))
+    );
+  };
+  const updateExercise = (dayKey, exKey, patch) =>
+    setDays((ds) =>
+      ds.map((d) => (d.key === dayKey ? { ...d, exercises: d.exercises.map((e) => (e.key === exKey ? { ...e, ...patch } : e)) } : d))
+    );
+  const removeExercise = (dayKey, exKey) =>
+    setDays((ds) => ds.map((d) => (d.key === dayKey ? { ...d, exercises: d.exercises.filter((e) => e.key !== exKey) } : d)));
+
+  const handleSave = () => {
+    const cleanDays = days
+      .map((d, i) => ({
+        name: d.name.trim() || `Day ${i + 1}`,
+        exercises: d.exercises
+          .filter((e) => e.exerciseName)
+          .map((e) => ({ exerciseName: e.exerciseName, sets: Number(e.sets) || 1, reps: String(e.reps || "").trim() || "10" })),
+      }))
+      .filter((d) => d.exercises.length > 0);
+    if (!name.trim()) { setError("Give the template a name."); return; }
+    if (cleanDays.length === 0) { setError("Add at least one exercise to a day."); return; }
+    setError("");
+    onSave({ id: initial.id, name: name.trim(), level, description: description.trim(), days: cleanDays });
+  };
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{mode === "edit" ? "Edit template" : "New template"}</div>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={18} /></button>
+      </div>
+
+      <Field label="Template name">
+        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Glute Focus, 4 Days" />
+      </Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Level">
+            <select style={inputStyle} value={level} onChange={(e) => setLevel(e.target.value)}>
+              {TEMPLATE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+      <Field label="Description (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Who is this for and what does it focus on?" />
+      </Field>
+
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, margin: "6px 0 10px" }}>Workout days</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+        {days.map((d) => (
+          <div key={d.key} style={{ background: COLORS.surfaceAlt, borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <input style={{ ...inputStyle, fontWeight: 600 }} value={d.name} onChange={(e) => updateDay(d.key, { name: e.target.value })} placeholder="Day name" />
+              {days.length > 1 && (
+                <button onClick={() => removeDay(d.key)} title="Remove day" style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={15} /></button>
+              )}
+            </div>
+
+            {d.exercises.map((e) => (
+              <div key={e.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500 }}>{e.exerciseName}</div>
+                <input type="number" min="1" style={{ ...inputStyle, width: 54, padding: "8px 6px", textAlign: "center" }} value={e.sets} onChange={(ev) => updateExercise(d.key, e.key, { sets: ev.target.value })} title="Sets" placeholder="Sets" />
+                <span style={{ color: COLORS.textMuted, fontSize: 12 }}>x</span>
+                <input style={{ ...inputStyle, width: 84, padding: "8px 6px", textAlign: "center" }} value={e.reps} onChange={(ev) => updateExercise(d.key, e.key, { reps: ev.target.value })} title="Reps (like 10-12 or 30 sec)" placeholder="Reps" />
+                <button onClick={() => removeExercise(d.key, e.key)} title="Remove exercise" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 2 }}><X size={15} /></button>
+              </div>
+            ))}
+
+            <select style={inputStyle} value="" onChange={(ev) => addExercise(d.key, ev.target.value)}>
+              <option value="">+ Add exercise…</option>
+              {Object.keys(byMuscle).sort().map((g) => (
+                <optgroup key={g} label={g}>
+                  {byMuscle[g].map((ex) => <option key={ex.id} value={ex.name}>{ex.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+
+      <Btn variant="subtle" onClick={addDay}><Plus size={15} /> Add a day</Btn>
+      <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5, marginTop: 10 }}>
+        Don't see an exercise? Add it in the Library tab first, then it will show up in this list.
+      </div>
+
+      {error && <div style={{ color: COLORS.danger, fontSize: 12, marginTop: 12 }}>{error}</div>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <Btn onClick={handleSave}>Save template</Btn>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </Card>
+  );
+}
+
 function TemplatesTab({ clients, exercises }) {
   const [expandedId, setExpandedId] = useState(null);
   const [assignTarget, setAssignTarget] = useState({}); // templateId -> clientId
   const [weeksTarget, setWeeksTarget] = useState({}); // templateId -> weeks
   const [confirming, setConfirming] = useState(null); // templateId awaiting confirm
   const [status, setStatus] = useState({}); // templateId -> status message
+  const [customTemplates, setCustomTemplates] = useState([]);
+  const [builder, setBuilder] = useState(null); // null, or { template, mode: "new" | "edit" }
+
+  useEffect(() => {
+    (async () => setCustomTemplates(await sGet("app:customTemplates", [])))();
+  }, []);
+
+  const saveCustomTemplate = async (template) => {
+    const current = await sGet("app:customTemplates", []);
+    const exists = current.some((t) => t.id === template.id);
+    const next = exists ? current.map((t) => (t.id === template.id ? template : t)) : [template, ...current];
+    const ok = await sSet("app:customTemplates", next);
+    if (!ok) {
+      alert("Couldn't save the template. Check your connection and try again.");
+      return;
+    }
+    setCustomTemplates(next);
+    setBuilder(null);
+  };
+
+  const deleteCustomTemplate = async (id) => {
+    if (!window.confirm("Delete this template? Programs already assigned to clients won't change.")) return;
+    const current = await sGet("app:customTemplates", []);
+    const next = current.filter((t) => t.id !== id);
+    if (await sSet("app:customTemplates", next)) setCustomTemplates(next);
+  };
+
+  const allTemplates = [...customTemplates.map((t) => ({ ...t, custom: true })), ...TEMPLATE_PROGRAMS];
 
   const resolveDays = (template) => {
     const missing = [];
@@ -2712,27 +2883,44 @@ function TemplatesTab({ clients, exercises }) {
     setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
   };
 
+  if (builder) {
+    return <TemplateBuilder initial={builder.template} mode={builder.mode} exercises={exercises} onSave={saveCustomTemplate} onCancel={() => setBuilder(null)} />;
+  }
+
   if (clients.length === 0) {
     return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign them a program.</div>;
   }
 
   return (
     <div>
-      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 6 }}>Program templates</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Program templates</div>
+        <Btn onClick={() => setBuilder({ mode: "new", template: blankTemplate() })}><Plus size={15} /> New template</Btn>
+      </div>
       <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>"Start now" replaces their current program immediately. "Add to schedule" queues it to begin right after their current program (or last scheduled one) ends.</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {TEMPLATE_PROGRAMS.map((t) => (
+        {allTemplates.map((t) => (
           <Card key={t.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
               <div>
-                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}</div>
+                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}{t.custom && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.lime }}>Custom</span>}</div>
                 <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
                 <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
               </div>
               <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
                 {expandedId === t.id ? "Hide" : "Preview"}
               </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+              <button onClick={() => setBuilder({ mode: "new", template: copyTemplate(t) })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Copy and edit</button>
+              {t.custom && (
+                <>
+                  <button onClick={() => setBuilder({ mode: "edit", template: t })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Edit</button>
+                  <button onClick={() => deleteCustomTemplate(t.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Delete</button>
+                </>
+              )}
             </div>
 
             {expandedId === t.id && (
@@ -3603,6 +3791,46 @@ function BlogTab({ isTrainer, onOpenMessages }) {
   );
 }
 
+// Comments under a community wall post.
+function CommentThread({ post, isTrainer, clientId, open, onToggle, draft, onDraft, busy, onSend, onRemove }) {
+  const comments = post.comments || [];
+  const label = comments.length === 0 ? "Comment" : `${comments.length} comment${comments.length === 1 ? "" : "s"}`;
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 8 }}>
+      <button onClick={onToggle} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+        <MessageCircle size={14} /> {label}
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {comments.map((c) => (
+            <div key={c.id} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", color: c.authorType === "trainer" ? COLORS.accent : COLORS.text }}>{c.authorName}</span>
+                {(isTrainer || (clientId && c.authorId === clientId)) && (
+                  <button onClick={() => onRemove(c.id)} title="Delete comment" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 0 }}><Trash2 size={12} /></button>
+                )}
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{c.text}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{new Date(c.date).toLocaleString()}</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+              placeholder="Write a comment…"
+              maxLength={500}
+              value={draft}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onSend(); }}
+            />
+            <Btn style={{ padding: "8px 12px" }} disabled={busy || !draft.trim()} onClick={onSend}><Send size={14} /></Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3614,6 +3842,9 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
   const [photoError, setPhotoError] = useState("");
   const [viewing, setViewing] = useState(null);
   const photoInputRef = useRef(null);
+  const [openComments, setOpenComments] = useState({});
+  const [commentDrafts, setCommentDrafts] = useState({});
+  const [commentBusy, setCommentBusy] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -3666,8 +3897,10 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
     const list = await sGet("app:communityPosts", []);
     const newPost = {
       id: uid(),
+      authorId: isTrainer ? "trainer" : clientId,
       authorName: isTrainer ? "Your trainer" : authorName,
       authorType: isTrainer ? "trainer" : "client",
+      comments: [],
       text: text.trim(),
       photoUrl: photoUrl || null,
       photoFileId: photoFileId || null,
@@ -3693,6 +3926,64 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
     await sSet("app:communityPosts", next);
     setPosts(next.sort((a, b) => b.date.localeCompare(a.date)));
     deleteImageKitFile(target?.photoFileId);
+  };
+
+  const notifyAboutComment = async (post, comment) => {
+    try {
+      const clientsList = await sGet("app:clients", []);
+      const snippet = comment.text.slice(0, 100);
+      // Tell the person who wrote the post (unless they wrote the comment).
+      if (post.authorType === "client") {
+        const author = clientsList.find((c) => c.id === post.authorId) || clientsList.find((c) => c.name === post.authorName);
+        if (author && author.id !== clientId) {
+          const d = await sGet(`client:${author.id}`, {});
+          if (d.pushSubscription) await sendPush([d.pushSubscription], `${comment.authorName} commented on your post`, snippet);
+        }
+      }
+      // Tell the trainer about any client comment.
+      if (!isTrainer) {
+        const trainerSub = await sGet("app:trainerPushSubscription", null);
+        if (trainerSub) {
+          const where = post.authorType === "trainer" ? "your announcement" : `${post.authorName}'s post`;
+          await sendPush([trainerSub], `${comment.authorName} commented on ${where}`, snippet);
+        }
+      }
+    } catch (e) {
+      console.error("Comment notification error:", e);
+    }
+  };
+
+  const addComment = async (post) => {
+    const draft = (commentDrafts[post.id] || "").trim();
+    if (!draft) return;
+    setCommentBusy(post.id);
+    const comment = {
+      id: uid(),
+      authorId: isTrainer ? "trainer" : clientId,
+      authorName: isTrainer ? "Your trainer" : authorName,
+      authorType: isTrainer ? "trainer" : "client",
+      text: draft.slice(0, 500),
+      date: new Date().toISOString(),
+    };
+    const list = await sGet("app:communityPosts", []);
+    const next = list.map((p) => (p.id === post.id ? { ...p, comments: [...(p.comments || []), comment] } : p));
+    const ok = await sSet("app:communityPosts", next);
+    if (ok) {
+      setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
+      setCommentDrafts((d) => ({ ...d, [post.id]: "" }));
+      notifyAboutComment(post, comment);
+    } else {
+      alert("Couldn't post your comment. Check your connection and try again.");
+    }
+    setCommentBusy(null);
+  };
+
+  const removeComment = async (postId, commentId) => {
+    const list = await sGet("app:communityPosts", []);
+    const next = list.map((p) => (p.id === postId ? { ...p, comments: (p.comments || []).filter((c) => c.id !== commentId) } : p));
+    if (await sSet("app:communityPosts", next)) {
+      setPosts([...next].sort((a, b) => b.date.localeCompare(a.date)));
+    }
   };
 
   const cancelPendingPhoto = () => {
@@ -3765,6 +4056,18 @@ function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
                 </div>
               )}
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 8 }}>{new Date(p.date).toLocaleString()}</div>
+              <CommentThread
+                post={p}
+                isTrainer={isTrainer}
+                clientId={clientId}
+                open={!!openComments[p.id]}
+                onToggle={() => setOpenComments((o) => ({ ...o, [p.id]: !o[p.id] }))}
+                draft={commentDrafts[p.id] || ""}
+                onDraft={(v) => setCommentDrafts((d) => ({ ...d, [p.id]: v }))}
+                busy={commentBusy === p.id}
+                onSend={() => addComment(p)}
+                onRemove={(cid) => removeComment(p.id, cid)}
+              />
             </Card>
           ))}
         </div>
