@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip } from "lucide-react";
+import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
+import { DEFAULT_BLOG_POSTS, BLOG_CATEGORIES } from "./blogPosts";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function toYouTubeEmbed(url) {
@@ -1888,6 +1889,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
     { id: "nutrition", label: "Nutrition", icon: Apple },
     { id: "messages", label: "Messages", icon: MessageCircle },
     { id: "community", label: "Community", icon: Users },
+    { id: "blog", label: "Blog", icon: BookOpen },
   ];
 
   return (
@@ -1941,6 +1943,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
         {tab === "nutrition" && <NutritionTargetsTab clients={clients} />}
         {tab === "messages" && <MessagesTab clients={clients} />}
         {tab === "community" && <CommunityBoard isTrainer clients={clients} />}
+        {tab === "blog" && <BlogTab isTrainer />}
       </div>
     </div>
   );
@@ -3285,6 +3288,321 @@ function MessageThread({ clientId }) {
 }
 
 // ============================================================
+// ============================================================
+// Learn / Blog: articles for clients, editor for the trainer.
+// Posts live in Firestore under the key "app:blogPosts". Until the trainer
+// saves a change, the starter articles from blogPosts.js are shown.
+const BLOG_KEY = "app:blogPosts";
+const BLOG_READ_KEY = "xcel_blog_read";
+const NEW_BADGE_DAYS = 14;
+
+function loadBlogReadIds() {
+  try { return JSON.parse(localStorage.getItem(BLOG_READ_KEY) || "[]"); } catch { return []; }
+}
+function saveBlogReadIds(ids) {
+  try { localStorage.setItem(BLOG_READ_KEY, JSON.stringify(ids)); } catch { /* storage unavailable */ }
+}
+function estimateReadMin(text) {
+  const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
+}
+
+async function notifyAllClients(title, body) {
+  try {
+    const list = await sGet("app:clients", []);
+    const subs = await Promise.all(
+      list.map(async (c) => {
+        const d = await sGet(`client:${c.id}`, {});
+        return d.pushSubscription;
+      })
+    );
+    await sendPush(subs, title, body);
+  } catch (e) {
+    console.error("Blog notification error:", e);
+  }
+}
+
+function renderBlogInline(text, keyPrefix) {
+  const parts = [];
+  const re = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  let last = 0;
+  let i = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("**")) {
+      parts.push(<strong key={`${keyPrefix}-${i++}`} style={{ color: COLORS.text, fontWeight: 600 }}>{tok.slice(2, -2)}</strong>);
+    } else {
+      parts.push(<em key={`${keyPrefix}-${i++}`}>{tok.slice(1, -1)}</em>);
+    }
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+function BlogBody({ body }) {
+  const blocks = (body || "").replace(/\r/g, "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const textStyle = { fontSize: 15, lineHeight: 1.65, color: "#D6D9DF" };
+  return (
+    <div>
+      {blocks.map((block, bi) => {
+        const key = `blk${bi}`;
+        const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (/^##\s+/.test(block)) {
+          return <h3 key={key} style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, margin: "24px 0 8px" }}>{block.replace(/^##\s+/, "")}</h3>;
+        }
+        if (/^\*\*[^*]+\*\*$/.test(block)) {
+          return <div key={key} style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, margin: "22px 0 6px" }}>{block.slice(2, -2)}</div>;
+        }
+        if (lines.every((l) => /^[-•]\s+/.test(l))) {
+          return (
+            <ul key={key} style={{ ...textStyle, margin: "0 0 14px", paddingLeft: 22 }}>
+              {lines.map((l, li) => <li key={li} style={{ marginBottom: 6 }}>{renderBlogInline(l.replace(/^[-•]\s+/, ""), `${key}-${li}`)}</li>)}
+            </ul>
+          );
+        }
+        if (lines.every((l) => /^\d+\.\s+/.test(l))) {
+          return (
+            <ol key={key} style={{ ...textStyle, margin: "0 0 14px", paddingLeft: 22 }}>
+              {lines.map((l, li) => <li key={li} style={{ marginBottom: 6 }}>{renderBlogInline(l.replace(/^\d+\.\s+/, ""), `${key}-${li}`)}</li>)}
+            </ol>
+          );
+        }
+        if (/^\*[^*]+\*$/.test(block)) {
+          return <div key={key} style={{ fontSize: 12, lineHeight: 1.5, color: COLORS.textMuted, fontStyle: "italic", borderTop: `1px solid ${COLORS.border}`, paddingTop: 14, marginTop: 24 }}>{block.slice(1, -1)}</div>;
+        }
+        return <p key={key} style={{ ...textStyle, margin: "0 0 14px" }}>{renderBlogInline(lines.join(" "), key)}</p>;
+      })}
+    </div>
+  );
+}
+
+function BlogChip({ children }) {
+  return (
+    <span style={{ display: "inline-block", background: COLORS.accentDim, color: COLORS.accent, fontSize: 11, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", padding: "3px 9px", borderRadius: 999 }}>
+      {children}
+    </span>
+  );
+}
+
+function BlogEditor({ initial, saving, onSave, onCancel }) {
+  const isNew = !initial?.id;
+  const [title, setTitle] = useState(initial?.title || "");
+  const [category, setCategory] = useState(initial?.category || BLOG_CATEGORIES[0]);
+  const [excerpt, setExcerpt] = useState(initial?.excerpt || "");
+  const [body, setBody] = useState(initial?.body || "");
+  const [notify, setNotify] = useState(true);
+  const categories = BLOG_CATEGORIES.includes(category) ? BLOG_CATEGORIES : [category, ...BLOG_CATEGORIES];
+  const canSave = title.trim() && body.trim() && !saving;
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{isNew ? "New article" : "Edit article"}</div>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={18} /></button>
+      </div>
+      <Field label="Title">
+        <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. How Much Water Should You Drink?" />
+      </Field>
+      <Field label="Category">
+        <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </Field>
+      <Field label="Short summary (shown on the article card)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} maxLength={200} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="One or two sentences that make people want to read it." />
+      </Field>
+      <Field label="Article">
+        <textarea style={{ ...inputStyle, minHeight: 280, resize: "vertical", lineHeight: 1.5 }} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your article here." />
+      </Field>
+      <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5, marginTop: -6, marginBottom: 14 }}>
+        Leave a blank line between paragraphs. Start a line with "- " for bullets or "1. " for a numbered list. Put **double stars** around bold text. A line with only **bold text** becomes a subheading.
+      </div>
+      {isNew && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 16, cursor: "pointer" }}>
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+          Send a push notification to clients
+        </label>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn disabled={!canSave} onClick={() => onSave({ ...(initial || {}), title: title.trim(), category, excerpt: excerpt.trim(), body: body.trim() }, notify)}>
+          {saving ? "Saving…" : isNew ? "Publish article" : "Save changes"}
+        </Btn>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </Card>
+  );
+}
+
+function BlogTab({ isTrainer, onOpenMessages }) {
+  const [posts, setPosts] = useState(null);
+  const [filter, setFilter] = useState("All");
+  const [openId, setOpenId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [readIds, setReadIds] = useState(loadBlogReadIds);
+
+  useEffect(() => {
+    (async () => {
+      const stored = await sGet(BLOG_KEY, null);
+      setPosts(Array.isArray(stored) ? stored : DEFAULT_BLOG_POSTS);
+    })();
+  }, []);
+
+  // Re-read the latest list before every write so nothing gets overwritten.
+  const persist = async (mutate) => {
+    const current = await sGet(BLOG_KEY, null);
+    const base = Array.isArray(current) ? current : DEFAULT_BLOG_POSTS;
+    const next = mutate(base);
+    const ok = await sSet(BLOG_KEY, next);
+    if (ok) setPosts(next);
+    return ok;
+  };
+
+  const savePost = async (form, notify) => {
+    setSaving(true);
+    const isNew = !form.id;
+    const post = { ...form, id: form.id || uid(), date: form.date || new Date().toISOString() };
+    const ok = await persist((list) => (isNew ? [post, ...list] : list.map((p) => (p.id === post.id ? post : p))));
+    setSaving(false);
+    if (!ok) {
+      alert("Couldn't save the article. Check your connection and try again.");
+      return;
+    }
+    setEditing(null);
+    if (isNew && notify) {
+      notifyAllClients(`New article: ${post.title}`, post.excerpt || "Tap to read it in the Learn tab.");
+    }
+  };
+
+  const deletePost = async (id) => {
+    if (!window.confirm("Delete this article? This can't be undone.")) return;
+    const ok = await persist((list) => list.filter((p) => p.id !== id));
+    if (!ok) alert("Couldn't delete the article. Try again.");
+    else setOpenId(null);
+  };
+
+  const openPost = (id) => {
+    setOpenId(id);
+    if (!readIds.includes(id)) {
+      const next = [...readIds, id];
+      setReadIds(next);
+      saveBlogReadIds(next);
+    }
+  };
+
+  if (posts === null) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading…</div>;
+
+  if (editing) {
+    return <BlogEditor initial={editing === "new" ? null : editing} saving={saving} onSave={savePost} onCancel={() => setEditing(null)} />;
+  }
+
+  const sorted = [...posts].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const current = openId ? posts.find((p) => p.id === openId) : null;
+
+  if (current) {
+    return (
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 13, padding: 0 }}>
+            <ChevronLeft size={16} /> All articles
+          </button>
+          {isTrainer && (
+            <div style={{ display: "flex", gap: 14 }}>
+              <button onClick={() => setEditing(current)} title="Edit" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Edit3 size={16} /></button>
+              <button onClick={() => deletePost(current.id)} title="Delete" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><Trash2 size={16} /></button>
+            </div>
+          )}
+        </div>
+        <BlogChip>{current.category}</BlogChip>
+        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, lineHeight: 1.2, margin: "12px 0 6px" }}>{current.title}</h1>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 22 }}>{estimateReadMin(current.body)} min read</div>
+        <BlogBody body={current.body} />
+        {!isTrainer && onOpenMessages && (
+          <Card style={{ marginTop: 24 }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Have a question about this?</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 12 }}>Send me a message and I'll help you apply it to your training.</div>
+            <Btn onClick={onOpenMessages}><MessageCircle size={15} /> Message your trainer</Btn>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  const categories = ["All", ...Array.from(new Set(sorted.map((p) => p.category).filter(Boolean)))];
+  const visible = filter === "All" ? sorted : sorted.filter((p) => p.category === filter);
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 10 }}>
+        <div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 20 }}>{isTrainer ? "Blog" : "Learn"}</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted }}>Health and fitness articles from your trainer</div>
+        </div>
+        {isTrainer && <Btn onClick={() => setEditing("new")}><Plus size={15} /> New article</Btn>}
+      </div>
+
+      {categories.length > 2 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 12 }}>
+          {categories.map((c) => (
+            <button
+              key={c}
+              onClick={() => setFilter(c)}
+              style={{
+                background: filter === c ? COLORS.accent : COLORS.surfaceAlt,
+                color: filter === c ? "#fff" : COLORS.textMuted,
+                border: "none",
+                borderRadius: 999,
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: "'Space Grotesk', sans-serif",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <div style={{ color: COLORS.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>
+          {isTrainer ? "No articles yet. Tap New article to write your first one." : "No articles yet. Check back soon."}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {visible.map((p) => {
+            const fresh = !readIds.includes(p.id) && Date.now() - new Date(p.date).getTime() < NEW_BADGE_DAYS * 86400000;
+            return (
+              <Card key={p.id} onClick={() => openPost(p.id)} style={{ cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <BlogChip>{p.category}</BlogChip>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {fresh && <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.lime, fontFamily: "'Space Grotesk', sans-serif" }}>New</span>}
+                    {isTrainer && (
+                      <>
+                        <button onClick={(e) => { e.stopPropagation(); setEditing(p); }} title="Edit" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 0 }}><Edit3 size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); deletePost(p.id); }} title="Delete" style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 0 }}><Trash2 size={14} /></button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, lineHeight: 1.25, marginTop: 10 }}>{p.title}</div>
+                {p.excerpt && <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.5, marginTop: 6 }}>{p.excerpt}</div>}
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 10 }}>{estimateReadMin(p.body)} min read</div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommunityBoard({ isTrainer, authorName, clients, clientId }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3684,6 +4002,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "messages", label: "Messages", icon: MessageCircle },
     { id: "community", label: "Community", icon: Users },
+    { id: "learn", label: "Learn", icon: BookOpen },
   ];
 
   useEffect(() => {
@@ -3758,6 +4077,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         {tab === "progress" && <ProgressTab data={data} exercises={exercises} clientId={client.id} onSave={onSave} />}
         {tab === "messages" && <ClientMessages data={data} onSave={onSave} client={client} />}
         {tab === "community" && <CommunityBoard isTrainer={false} authorName={client.name} clientId={client.id} />}
+        {tab === "learn" && <BlogTab isTrainer={false} onOpenMessages={() => setTab("messages")} />}
       </div>
 
       {showIntake && (
@@ -3775,15 +4095,17 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
             onClick={() => setTab(t.id)}
             style={{
               flex: 1,
+              minWidth: 0,
               background: "none",
               border: "none",
-              padding: "12px 4px",
+              padding: "12px 1px",
               color: tab === t.id ? COLORS.accent : COLORS.textMuted,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               gap: 4,
-              fontSize: 10,
+              fontSize: 9,
+              whiteSpace: "nowrap",
               fontFamily: "'Space Grotesk', sans-serif",
               fontWeight: 600,
               cursor: "pointer",
