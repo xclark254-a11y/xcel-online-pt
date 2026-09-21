@@ -4,6 +4,7 @@ import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, 
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 import { DEFAULT_BLOG_POSTS, BLOG_CATEGORIES } from "./blogPosts";
+import { BOOTCAMP_EXERCISES, BOOTCAMP_TEMPLATES } from "./bootcampTemplates";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function toYouTubeEmbed(url) {
@@ -585,6 +586,8 @@ const SEED_EXERCISES = [
   { id: uid(), name: "Sled Lateral Drag", muscle: "Legs", equipment: "Sled", instructions: "Attach the sled to your side and walk laterally, dragging it across the floor with controlled steps." },
   { id: uid(), name: "Sled Sprint Push", muscle: "Full Body", equipment: "Sled", instructions: "Hands on the sled handles, drive through the legs pushing the sled forward as fast as possible for a short distance." },
 ];
+
+SEED_EXERCISES.push(...BOOTCAMP_EXERCISES.map((e) => ({ id: uid(), ...e })));
 
 const MUSCLES = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.muscle)))];
 const EQUIPMENT = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.equipment)))];
@@ -1192,6 +1195,8 @@ const TEMPLATE_PROGRAMS = [
     ],
   },
 ];
+
+TEMPLATE_PROGRAMS.push(...BOOTCAMP_TEMPLATES);
 
 const MOBILITY_ROUTINES = [
   {
