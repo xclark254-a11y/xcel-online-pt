@@ -2869,10 +2869,30 @@ function TemplatesTab({ clients, exercises }) {
   const [status, setStatus] = useState({}); // templateId -> status message
   const [customTemplates, setCustomTemplates] = useState([]);
   const [builder, setBuilder] = useState(null); // null, or { template, mode: "new" | "edit" }
+  const [folderMap, setFolderMap] = useState({}); // templateId -> folder name
+  const [openFolders, setOpenFolders] = useState({ Unfiled: true }); // folder name -> expanded?
+  const [movingId, setMovingId] = useState(null); // templateId currently showing the folder picker
+  const [newFolderText, setNewFolderText] = useState("");
 
   useEffect(() => {
-    (async () => setCustomTemplates(await sGet("app:customTemplates", [])))();
+    (async () => {
+      setCustomTemplates(await sGet("app:customTemplates", []));
+      setFolderMap(await sGet("app:templateFolders", {}));
+    })();
   }, []);
+
+  const setTemplateFolder = async (templateId, folder) => {
+    const current = await sGet("app:templateFolders", {});
+    const next = { ...current };
+    if (folder) next[templateId] = folder; else delete next[templateId];
+    const ok = await sSet("app:templateFolders", next);
+    if (ok) {
+      setFolderMap(next);
+      if (folder) setOpenFolders((o) => ({ ...o, [folder]: true }));
+    }
+    setMovingId(null);
+    setNewFolderText("");
+  };
 
   const saveCustomTemplate = async (template) => {
     const current = await sGet("app:customTemplates", []);
@@ -2952,113 +2972,209 @@ function TemplatesTab({ clients, exercises }) {
     return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Add a client first, then come back here to assign them a program.</div>;
   }
 
+  const existingFolderNames = [...new Set(Object.values(folderMap))].filter(Boolean).sort();
+
+  const grouped = allTemplates.reduce((acc, t) => {
+    const f = folderMap[t.id] || "Unfiled";
+    (acc[f] = acc[f] || []).push(t);
+    return acc;
+  }, {});
+  const folderOrder = Object.keys(grouped).sort((a, b) => {
+    if (a === "Unfiled") return 1;
+    if (b === "Unfiled") return -1;
+    return a.localeCompare(b);
+  });
+
+  const renderTemplateCard = (t) => (
+    <Card key={t.id}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}{t.custom && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.lime }}>Custom</span>}</div>
+          <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
+        </div>
+        <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
+          {expandedId === t.id ? "Hide" : "Preview"}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 16, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => setBuilder({ mode: "new", template: copyTemplate(t) })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Copy and edit</button>
+        {t.custom && (
+          <>
+            <button onClick={() => setBuilder({ mode: "edit", template: t })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Edit</button>
+            <button onClick={() => deleteCustomTemplate(t.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Delete</button>
+          </>
+        )}
+        <span style={{ fontSize: 11, color: COLORS.textMuted }}>·</span>
+        <span style={{ fontSize: 11, color: COLORS.textMuted }}>Folder: {folderMap[t.id] || "Unfiled"}</span>
+        <button onClick={() => { setMovingId(movingId === t.id ? null : t.id); setNewFolderText(""); }} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
+          {movingId === t.id ? "Cancel" : "Move to folder"}
+        </button>
+      </div>
+
+      {movingId === t.id && (
+        <div style={{ marginTop: 10, padding: 10, background: COLORS.surfaceAlt, borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          {folderMap[t.id] && (
+            <button onClick={() => setTemplateFolder(t.id, null)} style={{ alignSelf: "flex-start", background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textMuted, cursor: "pointer", fontSize: 11, padding: "4px 8px" }}>
+              Remove from folder (back to Unfiled)
+            </button>
+          )}
+          {existingFolderNames.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {existingFolderNames.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setTemplateFolder(t.id, f)}
+                  style={{
+                    background: "none",
+                    border: `1px solid ${f === folderMap[t.id] ? COLORS.accent : COLORS.border}`,
+                    borderRadius: 6,
+                    color: f === folderMap[t.id] ? COLORS.accent : COLORS.text,
+                    cursor: "pointer",
+                    fontSize: 11,
+                    padding: "4px 8px",
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              placeholder="New folder name…"
+              style={{ ...inputStyle, flex: 1 }}
+              value={newFolderText}
+              onChange={(e) => setNewFolderText(e.target.value)}
+            />
+            <Btn
+              style={{ padding: "8px 12px", fontSize: 12 }}
+              disabled={!newFolderText.trim()}
+              onClick={() => setTemplateFolder(t.id, newFolderText.trim())}
+            >
+              Save
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {expandedId === t.id && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {t.days.map((day, i) => (
+            <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{day.name}</div>
+              {day.exercises.map((ex, j) => (
+                <div key={j} style={{ fontSize: 11, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{ex.exerciseName}</span>
+                  <span>{ex.sets} × {ex.reps}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+        <select
+          style={{ ...inputStyle, maxWidth: 190 }}
+          value={assignTarget[t.id] || ""}
+          onChange={(e) => setAssignTarget({ ...assignTarget, [t.id]: e.target.value })}
+        >
+          <option value="">Choose a client…</option>
+          {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <input
+          type="number"
+          min="1"
+          placeholder="Weeks"
+          title="How many weeks this program runs before the next scheduled one can start (leave blank to run indefinitely)"
+          style={{ ...inputStyle, width: 80 }}
+          value={weeksTarget[t.id] || ""}
+          onChange={(e) => setWeeksTarget({ ...weeksTarget, [t.id]: e.target.value })}
+        />
+        {confirming === t.id ? (
+          <>
+            <span style={{ fontSize: 11, color: COLORS.danger }}>Replace their current program?</span>
+            <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assignNow(t)}>Yes, start now</Btn>
+            <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(null)}>Cancel</Btn>
+          </>
+        ) : (
+          <>
+            <Btn
+              style={{ padding: "8px 12px", fontSize: 12 }}
+              disabled={!assignTarget[t.id]}
+              onClick={() => setConfirming(t.id)}
+            >
+              Start now
+            </Btn>
+            <Btn
+              variant="subtle"
+              style={{ padding: "8px 12px", fontSize: 12 }}
+              disabled={!assignTarget[t.id]}
+              onClick={() => addToSchedule(t)}
+            >
+              Add to schedule
+            </Btn>
+          </>
+        )}
+        <Btn
+          variant="subtle"
+          style={{ padding: "8px 12px", fontSize: 12 }}
+          onClick={() => assignToBootCampGroup(t)}
+        >
+          <Users size={13} /> Assign to Boot Camp group
+        </Btn>
+      </div>
+      {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Started") || status[t.id].startsWith("Scheduled") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
+    </Card>
+  );
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Program templates</div>
         <Btn onClick={() => setBuilder({ mode: "new", template: blankTemplate() })}><Plus size={15} /> New template</Btn>
       </div>
-      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>"Start now" replaces their current program immediately. "Add to schedule" queues it to begin right after their current program (or last scheduled one) ends.</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>"Start now" replaces their current program immediately. "Add to schedule" queues it to begin right after their current program (or last scheduled one) ends. Use "Move to folder" on any template to group them — handy for a client's multi-month program.</div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {allTemplates.map((t) => (
-          <Card key={t.id}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-              <div>
-                <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}{t.custom && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.lime }}>Custom</span>}</div>
-                <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
-              </div>
-              <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.textMuted, cursor: "pointer", padding: "6px 10px", fontSize: 11, flexShrink: 0 }}>
-                {expandedId === t.id ? "Hide" : "Preview"}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {folderOrder.map((folder) => {
+          const items = grouped[folder];
+          const isOpen = !!openFolders[folder];
+          return (
+            <div key={folder}>
+              <button
+                onClick={() => setOpenFolders({ ...openFolders, [folder]: !isOpen })}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: COLORS.surfaceAlt,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}>
+                  <Layers size={14} /> {folder} <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>({items.length})</span>
+                </span>
+                <ChevronLeft size={14} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(90deg)" : "rotate(-90deg)" }} />
               </button>
-            </div>
-
-            <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
-              <button onClick={() => setBuilder({ mode: "new", template: copyTemplate(t) })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Copy and edit</button>
-              {t.custom && (
-                <>
-                  <button onClick={() => setBuilder({ mode: "edit", template: t })} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Edit</button>
-                  <button onClick={() => deleteCustomTemplate(t.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>Delete</button>
-                </>
+              {isOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10, paddingLeft: 10, borderLeft: `2px solid ${COLORS.border}` }}>
+                  {items.map((t) => renderTemplateCard(t))}
+                </div>
               )}
             </div>
-
-            {expandedId === t.id && (
-              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                {t.days.map((day, i) => (
-                  <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{day.name}</div>
-                    {day.exercises.map((ex, j) => (
-                      <div key={j} style={{ fontSize: 11, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                        <span>{ex.exerciseName}</span>
-                        <span>{ex.sets} × {ex.reps}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
-              <select
-                style={{ ...inputStyle, maxWidth: 190 }}
-                value={assignTarget[t.id] || ""}
-                onChange={(e) => setAssignTarget({ ...assignTarget, [t.id]: e.target.value })}
-              >
-                <option value="">Choose a client…</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <input
-                type="number"
-                min="1"
-                placeholder="Weeks"
-                title="How many weeks this program runs before the next scheduled one can start (leave blank to run indefinitely)"
-                style={{ ...inputStyle, width: 80 }}
-                value={weeksTarget[t.id] || ""}
-                onChange={(e) => setWeeksTarget({ ...weeksTarget, [t.id]: e.target.value })}
-              />
-              {confirming === t.id ? (
-                <>
-                  <span style={{ fontSize: 11, color: COLORS.danger }}>Replace their current program?</span>
-                  <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => assignNow(t)}>Yes, start now</Btn>
-                  <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(null)}>Cancel</Btn>
-                </>
-              ) : (
-                <>
-                  <Btn
-                    style={{ padding: "8px 12px", fontSize: 12 }}
-                    disabled={!assignTarget[t.id]}
-                    onClick={() => setConfirming(t.id)}
-                  >
-                    Start now
-                  </Btn>
-                  <Btn
-                    variant="subtle"
-                    style={{ padding: "8px 12px", fontSize: 12 }}
-                    disabled={!assignTarget[t.id]}
-                    onClick={() => addToSchedule(t)}
-                  >
-                    Add to schedule
-                  </Btn>
-                </>
-              )}
-              <Btn
-                variant="subtle"
-                style={{ padding: "8px 12px", fontSize: 12 }}
-                onClick={() => assignToBootCampGroup(t)}
-              >
-                <Users size={13} /> Assign to Boot Camp group
-              </Btn>
-            </div>
-            {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Started") || status[t.id].startsWith("Scheduled") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
-          </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
-
 function BootCampAdminTab({ clients, exercises }) {
   const [customTemplates, setCustomTemplates] = useState([]);
   const [globalProgram, setGlobalProgram] = useState(null);
