@@ -2111,6 +2111,7 @@ function ClientsTab({ clients, exercises, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
+  const [bootCamp, setBootCamp] = useState(false);
   const [editing, setEditing] = useState(null);
   const [showPaused, setShowPaused] = useState(false);
   const [prefillInvite, setPrefillInvite] = useState(null);
@@ -2118,9 +2119,9 @@ function ClientsTab({ clients, exercises, onRefresh }) {
   const addClient = async () => {
     if (!name.trim() || !pin.trim()) return;
     const list = await sGet("app:clients", []);
-    list.push({ id: uid(), name: name.trim(), pin: pin.trim(), status: "active" });
+    list.push({ id: uid(), name: name.trim(), pin: pin.trim(), status: "active", bootCamp });
     await sSet("app:clients", list);
-    setName(""); setPin(""); setAdding(false);
+    setName(""); setPin(""); setBootCamp(false); setAdding(false);
     onRefresh();
   };
 
@@ -2167,6 +2168,10 @@ function ClientsTab({ clients, exercises, onRefresh }) {
               <Field label="PIN"><input style={inputStyle} value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
             </div>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.textMuted, marginTop: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={bootCamp} onChange={(e) => setBootCamp(e.target.checked)} />
+            Boot Camp member (sees only the Boot Camp workout tab, on the shared group program)
+          </label>
           <Btn onClick={addClient}>Save client</Btn>
         </Card>
       )}
@@ -2196,6 +2201,9 @@ function ClientsTab({ clients, exercises, onRefresh }) {
                     <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{c.name}</div>
                     {c.status === "paused" && (
                       <span style={{ fontSize: 10, color: COLORS.textMuted, background: COLORS.surfaceAlt, borderRadius: 6, padding: "2px 6px" }}>Paused</span>
+                    )}
+                    {c.bootCamp && (
+                      <span style={{ fontSize: 10, color: COLORS.lime, background: COLORS.surfaceAlt, borderRadius: 6, padding: "2px 6px" }}>Boot Camp</span>
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: COLORS.textMuted }}>PIN: {c.pin}</div>
@@ -2409,6 +2417,7 @@ function WorkoutLogViewer({ clientId, exercises }) {
   const [open, setOpen] = useState(false);
   const [logs, setLogs] = useState(null);
   const [program, setProgram] = useState(null);
+  const [bootcampProgram, setBootcampProgram] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expandedLog, setExpandedLog] = useState(null);
 
@@ -2416,8 +2425,11 @@ function WorkoutLogViewer({ clientId, exercises }) {
     if (!open && logs === null) {
       setLoading(true);
       const data = await sGet(`client:${clientId}`, {});
-      setLogs([...(data.logs || [])].sort((a, b) => b.date.localeCompare(a.date)));
+      const personal = (data.logs || []).map((l) => ({ ...l, source: "Personal" }));
+      const bootcamp = (data.bootcampLogs || []).map((l) => ({ ...l, source: "Boot Camp" }));
+      setLogs([...personal, ...bootcamp].sort((a, b) => b.date.localeCompare(a.date)));
       setProgram(data.program || { days: [] });
+      setBootcampProgram(data.bootcampProgram || { days: [] });
       setLoading(false);
     }
     setOpen(!open);
@@ -2439,7 +2451,7 @@ function WorkoutLogViewer({ clientId, exercises }) {
               <div key={key} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedLog(isOpen ? null : key)}>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.text }}>{fmtDate(log.date)} — {log.dayName || "Workout"}{log.freeform ? " (self-logged)" : ""}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.text }}>{fmtDate(log.date)} — {log.dayName || "Workout"}{log.freeform ? " (self-logged)" : ""}{log.source === "Boot Camp" ? " · Boot Camp" : ""}</div>
                   </div>
                   <ChevronLeft size={13} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
                 </div>
@@ -2447,7 +2459,7 @@ function WorkoutLogViewer({ clientId, exercises }) {
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
                     {(log.entries || []).map((entry, i) => (
                       <div key={i}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent }}>{resolveLogExerciseName(log, entry, program, exercises)}</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent }}>{resolveLogExerciseName(log, entry, log.source === "Boot Camp" ? bootcampProgram : program, exercises)}</div>
                         {(entry.sets || []).map((s, si) => (
                           <div key={si} style={{ fontSize: 11, color: COLORS.textMuted, paddingLeft: 8 }}>Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs</div>
                         ))}
@@ -2536,6 +2548,7 @@ function EditClientRow({ client, onSave, onCancel }) {
   const [name, setName] = useState(client.name);
   const [pin, setPin] = useState(client.pin);
   const [stripeLink, setStripeLink] = useState(client.stripeLink || "");
+  const [bootCamp, setBootCamp] = useState(!!client.bootCamp);
   return (
     <div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -2549,8 +2562,12 @@ function EditClientRow({ client, onSave, onCancel }) {
       <Field label="Stripe Payment Link (optional)">
         <input style={inputStyle} placeholder="https://buy.stripe.com/..." value={stripeLink} onChange={(e) => setStripeLink(e.target.value)} />
       </Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.textMuted, marginBottom: 12, cursor: "pointer" }}>
+        <input type="checkbox" checked={bootCamp} onChange={(e) => setBootCamp(e.target.checked)} />
+        Boot Camp member (sees only the Boot Camp workout tab, on the shared group program)
+      </label>
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <Btn onClick={() => onSave({ name, pin, stripeLink: stripeLink.trim() })}><Check size={15} /></Btn>
+        <Btn onClick={() => onSave({ name, pin, stripeLink: stripeLink.trim(), bootCamp })}><Check size={15} /></Btn>
         <Btn variant="ghost" onClick={onCancel}><X size={15} /></Btn>
       </div>
     </div>
@@ -2871,6 +2888,32 @@ function TemplatesTab({ clients, exercises }) {
     setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 4000);
   };
 
+  const assignToBootCampGroup = async (template) => {
+    const bootCampClients = clients.filter((c) => c.bootCamp);
+    if (bootCampClients.length === 0) {
+      setStatus({ ...status, [template.id]: "No Boot Camp members yet — check \"Boot Camp member\" for clients in the Clients tab." });
+      setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
+      return;
+    }
+    const weeks = Number(weeksTarget[template.id]) || null;
+    let anyMissing = [];
+    for (const c of bootCampClients) {
+      const { days, missing } = resolveDays(template);
+      anyMissing = [...anyMissing, ...missing];
+      const data = await sGet(`client:${c.id}`, { program: { days: [] }, logs: [], messages: [] });
+      await sSet(`client:${c.id}`, { ...data, bootcampProgram: { days, name: template.name, startDate: todayISO(), weeks } });
+    }
+    const count = bootCampClients.length;
+    const uniqueMissing = [...new Set(anyMissing)];
+    setStatus({
+      ...status,
+      [template.id]: uniqueMissing.length
+        ? `Assigned to ${count} Boot Camp client${count === 1 ? "" : "s"} — couldn't find: ${uniqueMissing.join(", ")}`
+        : `Assigned to ${count} Boot Camp client${count === 1 ? "" : "s"}`,
+    });
+    setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
+  };
+
   const addToSchedule = async (template) => {
     const clientId = assignTarget[template.id];
     if (!clientId) return;
@@ -2987,6 +3030,13 @@ function TemplatesTab({ clients, exercises }) {
                   </Btn>
                 </>
               )}
+              <Btn
+                variant="subtle"
+                style={{ padding: "8px 12px", fontSize: 12 }}
+                onClick={() => assignToBootCampGroup(t)}
+              >
+                <Users size={13} /> Assign to Boot Camp group
+              </Btn>
             </div>
             {status[t.id] && <div style={{ fontSize: 11, color: status[t.id].startsWith("Started") || status[t.id].startsWith("Scheduled") ? COLORS.lime : COLORS.danger, marginTop: 8 }}>{status[t.id]}</div>}
           </Card>
@@ -4304,6 +4354,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
+    ...(client.bootCamp ? [{ id: "bootcamp", label: "Boot Camp", icon: Flame }] : []),
     { id: "mobility", label: "Mobility", icon: Activity },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "nutrition", label: "Nutrition", icon: Apple },
@@ -4379,6 +4430,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
+        {tab === "bootcamp" && <BootCampTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
         {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
         {tab === "nutrition" && <ClientNutrition data={data} onSave={onSave} />}
@@ -4396,14 +4448,14 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
         <OnboardingPrompts pushEnabled={!!data.pushSubscription} onEnablePush={enableNotifications} storageKey="xcel_onboarding_dismissed_client" />
       )}
 
-      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg, paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bg, paddingBottom: "env(safe-area-inset-bottom)", overflowX: "auto" }}>
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             style={{
               flex: 1,
-              minWidth: 0,
+              minWidth: 44,
               background: "none",
               border: "none",
               padding: "12px 1px",
@@ -4423,6 +4475,111 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function BootCampTab({ data, exercises, onSave, clientName }) {
+  const days = data.bootcampProgram?.days || [];
+  const [dayIdx, setDayIdx] = useState(0);
+  const day = days[dayIdx];
+  const bootcampLogs = data.bootcampLogs || [];
+  const todayLog = useMemo(() => bootcampLogs.find((l) => l.date === todayISO() && l.dayId === day?.id), [bootcampLogs, day]);
+  const [entries, setEntries] = useState(() => todayLog?.entries || []);
+
+  useEffect(() => {
+    setEntries(todayLog?.entries || []);
+  }, [dayIdx, todayLog]);
+
+  const notifyTrainer = async (workoutLabel) => {
+    const trainerSub = await sGet("app:trainerPushSubscription", null);
+    if (trainerSub) sendPush([trainerSub], "Boot Camp workout logged", `${clientName} just logged: ${workoutLabel}`);
+  };
+
+  if (days.length === 0) {
+    return (
+      <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
+        Your trainer hasn't assigned this week's Boot Camp workout yet. Check back soon.
+      </Card>
+    );
+  }
+
+  const getSetsFor = (dayExId, defaultSets) => {
+    const found = entries.find((e) => e.dayExId === dayExId);
+    if (found) return found.sets;
+    return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
+  };
+
+  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+    const current = getSetsFor(dayExId, defaultSets);
+    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const others = entries.filter((e) => e.dayExId !== dayExId);
+    setEntries([...others, { dayExId, sets: nextSets }]);
+  };
+
+  const saveWorkout = async () => {
+    const logs = bootcampLogs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
+    logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
+    await onSave({ ...data, bootcampLogs: logs });
+    notifyTrainer(day.name);
+  };
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, marginBottom: 2 }}>Boot Camp</div>
+      {data.bootcampProgram?.name && (
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 14 }}>{data.bootcampProgram.name}</div>
+      )}
+
+      <WeekCalendar
+        days={days}
+        scheduleOverrides={data.bootcampScheduleOverrides || {}}
+        dayIdx={dayIdx}
+        onSelectDay={setDayIdx}
+        onMoveDay={async (dayId, newDow) => {
+          const nextOverrides = { ...(data.bootcampScheduleOverrides || {}) };
+          if (newDow) nextOverrides[dayId] = newDow;
+          else delete nextOverrides[dayId];
+          await onSave({ ...data, bootcampScheduleOverrides: nextOverrides });
+        }}
+      />
+
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, marginBottom: 4 }}>{day.name}</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        {(data.bootcampScheduleOverrides?.[day.id] || day.dayOfWeek) ? `${data.bootcampScheduleOverrides?.[day.id] || day.dayOfWeek} · ` : ""}{day.exercises.length} exercises
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {day.exercises.map((ex) => {
+          const exDef = exercises.find((e) => e.id === ex.exerciseId);
+          const sets = getSetsFor(ex.id, ex.sets);
+          return (
+            <Card key={ex.id}>
+              <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+              <a
+                href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+              >
+                Watch example ↗
+              </a>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {sets.map((s, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                    <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
+                    <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Btn onClick={saveWorkout} style={{ width: "100%", marginTop: 16 }}><Check size={16} /> Save Boot Camp workout</Btn>
     </div>
   );
 }
