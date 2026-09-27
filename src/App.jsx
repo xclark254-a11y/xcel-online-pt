@@ -6,6 +6,7 @@ import { sGet, sSet } from "./firebase";
 import { DEFAULT_BLOG_POSTS, BLOG_CATEGORIES } from "./blogPosts";
 import { BOOTCAMP_EXERCISES, BOOTCAMP_TEMPLATES } from "./bootcampTemplates";
 import { DAVID_TEMPLATES } from "./davidProgram";
+import { DIANA_TEMPLATES } from "./dianaProgram";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function toYouTubeEmbed(url) {
@@ -1199,6 +1200,7 @@ const TEMPLATE_PROGRAMS = [
 
 TEMPLATE_PROGRAMS.push(...BOOTCAMP_TEMPLATES);
 TEMPLATE_PROGRAMS.push(...DAVID_TEMPLATES);
+TEMPLATE_PROGRAMS.push(...DIANA_TEMPLATES);
 
 const MOBILITY_ROUTINES = [
   {
