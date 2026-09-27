@@ -1887,6 +1887,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
 
   const tabs = [
     { id: "clients", label: "Clients", icon: User },
+    { id: "bootcamp", label: "Boot Camp", icon: Flame },
     { id: "library", label: "Library", icon: Dumbbell },
     { id: "templates", label: "Templates", icon: Layers },
     { id: "mobility", label: "Mobility", icon: Activity },
@@ -1941,6 +1942,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
 
       <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
         {tab === "clients" && <ClientsTab clients={clients} exercises={exercises} onRefresh={onRefreshClients} />}
+        {tab === "bootcamp" && <BootCampAdminTab clients={clients} exercises={exercises} />}
         {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "mobility" && <MobilityTab clients={clients} />}
@@ -2827,6 +2829,36 @@ function TemplateBuilder({ initial, mode, exercises, onSave, onCancel }) {
   );
 }
 
+function resolveTemplateDays(template, exercises) {
+  const missing = [];
+  const days = template.days.map((day) => ({
+    id: uid(),
+    name: day.name,
+    exercises: day.exercises.map((ex) => {
+      const found = exercises.find((e) => e.name.toLowerCase() === ex.exerciseName.toLowerCase());
+      if (!found) missing.push(ex.exerciseName);
+      return { id: uid(), exerciseId: found?.id || null, sets: ex.sets, reps: ex.reps, notes: "" };
+    }).filter((ex) => ex.exerciseId),
+  }));
+  return { days, missing };
+}
+
+async function broadcastBootCampProgram(template, weeks, clients, exercises) {
+  const bootCampClients = clients.filter((c) => c.bootCamp);
+  if (bootCampClients.length === 0) return { count: 0, missing: [] };
+  let anyMissing = [];
+  let globalDays = null;
+  for (const c of bootCampClients) {
+    const { days, missing } = resolveTemplateDays(template, exercises);
+    if (!globalDays) globalDays = days;
+    anyMissing = [...anyMissing, ...missing];
+    const data = await sGet(`client:${c.id}`, { program: { days: [] }, logs: [], messages: [] });
+    await sSet(`client:${c.id}`, { ...data, bootcampProgram: { days, name: template.name, startDate: todayISO(), weeks } });
+  }
+  await sSet("app:bootcampProgram", { name: template.name, days: globalDays, weeks, assignedDate: todayISO(), templateId: template.id });
+  return { count: bootCampClients.length, missing: [...new Set(anyMissing)] };
+}
+
 function TemplatesTab({ clients, exercises }) {
   const [expandedId, setExpandedId] = useState(null);
   const [assignTarget, setAssignTarget] = useState({}); // templateId -> clientId
@@ -2862,19 +2894,7 @@ function TemplatesTab({ clients, exercises }) {
 
   const allTemplates = [...customTemplates.map((t) => ({ ...t, custom: true })), ...TEMPLATE_PROGRAMS];
 
-  const resolveDays = (template) => {
-    const missing = [];
-    const days = template.days.map((day) => ({
-      id: uid(),
-      name: day.name,
-      exercises: day.exercises.map((ex) => {
-        const found = exercises.find((e) => e.name.toLowerCase() === ex.exerciseName.toLowerCase());
-        if (!found) missing.push(ex.exerciseName);
-        return { id: uid(), exerciseId: found?.id || null, sets: ex.sets, reps: ex.reps, notes: "" };
-      }).filter((ex) => ex.exerciseId),
-    }));
-    return { days, missing };
-  };
+  const resolveDays = (template) => resolveTemplateDays(template, exercises);
 
   const assignNow = async (template) => {
     const clientId = assignTarget[template.id];
@@ -2889,26 +2909,17 @@ function TemplatesTab({ clients, exercises }) {
   };
 
   const assignToBootCampGroup = async (template) => {
-    const bootCampClients = clients.filter((c) => c.bootCamp);
-    if (bootCampClients.length === 0) {
+    const weeks = Number(weeksTarget[template.id]) || null;
+    const { count, missing } = await broadcastBootCampProgram(template, weeks, clients, exercises);
+    if (count === 0) {
       setStatus({ ...status, [template.id]: "No Boot Camp members yet — check \"Boot Camp member\" for clients in the Clients tab." });
       setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
       return;
     }
-    const weeks = Number(weeksTarget[template.id]) || null;
-    let anyMissing = [];
-    for (const c of bootCampClients) {
-      const { days, missing } = resolveDays(template);
-      anyMissing = [...anyMissing, ...missing];
-      const data = await sGet(`client:${c.id}`, { program: { days: [] }, logs: [], messages: [] });
-      await sSet(`client:${c.id}`, { ...data, bootcampProgram: { days, name: template.name, startDate: todayISO(), weeks } });
-    }
-    const count = bootCampClients.length;
-    const uniqueMissing = [...new Set(anyMissing)];
     setStatus({
       ...status,
-      [template.id]: uniqueMissing.length
-        ? `Assigned to ${count} Boot Camp client${count === 1 ? "" : "s"} — couldn't find: ${uniqueMissing.join(", ")}`
+      [template.id]: missing.length
+        ? `Assigned to ${count} Boot Camp client${count === 1 ? "" : "s"} — couldn't find: ${missing.join(", ")}`
         : `Assigned to ${count} Boot Camp client${count === 1 ? "" : "s"}`,
     });
     setTimeout(() => setStatus((s) => ({ ...s, [template.id]: null })), 5000);
@@ -3042,6 +3053,179 @@ function TemplatesTab({ clients, exercises }) {
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function BootCampAdminTab({ clients, exercises }) {
+  const [customTemplates, setCustomTemplates] = useState([]);
+  const [globalProgram, setGlobalProgram] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [dayIdx, setDayIdx] = useState(0);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [weeks, setWeeks] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [roster, setRoster] = useState(null); // clientId -> boolean logged today
+
+  const bootCampClients = clients.filter((c) => c.bootCamp);
+
+  const load = async () => {
+    setLoading(true);
+    const [ct, gp] = await Promise.all([
+      sGet("app:customTemplates", []),
+      sGet("app:bootcampProgram", null),
+    ]);
+    setCustomTemplates(ct);
+    setGlobalProgram(gp);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const allTemplates = [...customTemplates.map((t) => ({ ...t, custom: true })), ...TEMPLATE_PROGRAMS];
+
+  const days = globalProgram?.days || [];
+  const todayFullName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
+
+  useEffect(() => {
+    if (days.length === 0) return;
+    const idx = days.findIndex((d) => d.name.startsWith(todayFullName));
+    setDayIdx(idx >= 0 ? idx : 0);
+  }, [globalProgram]);
+
+  useEffect(() => {
+    if (!globalProgram || bootCampClients.length === 0) { setRoster(null); return; }
+    (async () => {
+      const day = days[dayIdx];
+      if (!day) { setRoster(null); return; }
+      const entries = await Promise.all(bootCampClients.map(async (c) => {
+        const data = await sGet(`client:${c.id}`, { bootcampLogs: [] });
+        const logged = (data.bootcampLogs || []).some((l) => l.date === todayISO() && l.dayId === day.id);
+        return [c.id, logged];
+      }));
+      setRoster(Object.fromEntries(entries));
+    })();
+  }, [dayIdx, globalProgram, bootCampClients.length]);
+
+  const day = days[dayIdx];
+
+  const doAssign = async () => {
+    const template = allTemplates.find((t) => t.id === selectedTemplateId);
+    if (!template) return;
+    const weeksNum = Number(weeks) || null;
+    const { count, missing } = await broadcastBootCampProgram(template, weeksNum, clients, exercises);
+    setConfirming(false);
+    if (count === 0) {
+      setStatus("No Boot Camp members yet — check \"Boot Camp member\" for clients in the Clients tab.");
+    } else {
+      setStatus(missing.length
+        ? `Assigned "${template.name}" to ${count} Boot Camp client${count === 1 ? "" : "s"} — couldn't find: ${missing.join(", ")}`
+        : `Assigned "${template.name}" to ${count} Boot Camp client${count === 1 ? "" : "s"}`);
+    }
+    await load();
+    setTimeout(() => setStatus(null), 6000);
+  };
+
+  if (loading) return <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading…</div>;
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Boot Camp</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        {bootCampClients.length} member{bootCampClients.length === 1 ? "" : "s"}{globalProgram?.name ? ` · Currently on "${globalProgram.name}"` : ""}
+      </div>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 10 }}>What's on today</div>
+        {days.length === 0 ? (
+          <div style={{ fontSize: 13, color: COLORS.textMuted }}>No Boot Camp program assigned yet — pick one below.</div>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+              {days.map((d, i) => (
+                <button
+                  key={d.id}
+                  onClick={() => setDayIdx(i)}
+                  style={{
+                    padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    border: `1px solid ${i === dayIdx ? COLORS.accent : COLORS.border}`,
+                    background: i === dayIdx ? COLORS.accentDim : COLORS.surfaceAlt,
+                    color: i === dayIdx ? COLORS.accent : COLORS.text,
+                  }}
+                >
+                  {d.name}
+                </button>
+              ))}
+            </div>
+            {day && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {day.exercises.map((ex) => {
+                  const exDef = exercises.find((e) => e.id === ex.exerciseId);
+                  return (
+                    <div key={ex.id} style={{ fontSize: 12, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                      <span>{exDef?.name || "Exercise"}</span>
+                      <span>{ex.sets} × {ex.reps}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      {day && roster && bootCampClients.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 10 }}>Logged today — {day.name}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {bootCampClients.map((c) => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                <span>{c.name}</span>
+                {roster[c.id] ? (
+                  <span style={{ color: COLORS.lime, display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> Logged</span>
+                ) : (
+                  <span style={{ color: COLORS.textMuted }}>Not yet</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 10 }}>Assign a program to the group</div>
+        {bootCampClients.length === 0 && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>No Boot Camp members yet — check "Boot Camp member" for clients in the Clients tab.</div>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select style={{ ...inputStyle, maxWidth: 260 }} value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+            <option value="">Choose a template…</option>
+            {allTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <input
+            type="number"
+            min="1"
+            placeholder="Weeks"
+            title="How many weeks this runs before you assign the next one (optional)"
+            style={{ ...inputStyle, width: 80 }}
+            value={weeks}
+            onChange={(e) => setWeeks(e.target.value)}
+          />
+          {confirming ? (
+            <>
+              <span style={{ fontSize: 11, color: COLORS.danger }}>Replace the group's current program?</span>
+              <Btn style={{ padding: "8px 12px", fontSize: 12 }} onClick={doAssign}>Yes, assign</Btn>
+              <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setConfirming(false)}>Cancel</Btn>
+            </>
+          ) : (
+            <Btn style={{ padding: "8px 12px", fontSize: 12 }} disabled={!selectedTemplateId} onClick={() => setConfirming(true)}>
+              Assign to Boot Camp group
+            </Btn>
+          )}
+        </div>
+        {status && <div style={{ fontSize: 11, color: status.startsWith("Assigned") ? COLORS.lime : COLORS.danger, marginTop: 10 }}>{status}</div>}
+      </Card>
     </div>
   );
 }
