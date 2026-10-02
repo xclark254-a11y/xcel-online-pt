@@ -2235,6 +2235,7 @@ function ClientsTab({ clients, exercises, onRefresh }) {
             <IntakeViewer clientId={c.id} />
             <NutritionViewer clientId={c.id} />
             <ProgressPhotosViewer clientId={c.id} />
+            <LogWorkoutForClient clientId={c.id} clientName={c.name} exercises={exercises} />
             <WorkoutLogViewer clientId={c.id} exercises={exercises} />
             <ProgramScheduleViewer clientId={c.id} />
           </Card>
@@ -2421,6 +2422,121 @@ function ProgressPhotosViewer({ clientId }) {
   );
 }
 
+function LogWorkoutForClient({ clientId, clientName, exercises }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [days, setDays] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [dayIdx, setDayIdx] = useState(0);
+  const [entries, setEntries] = useState([]);
+  const [status, setStatus] = useState("");
+
+  const toggle = async () => {
+    if (!open) {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [] });
+      const d = data.program?.days || [];
+      const overrides = data.scheduleOverrides || {};
+      const todayFullName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
+      const matchIdx = d.findIndex((day) => (overrides[day.id] || day.dayOfWeek || day.name || "").startsWith(todayFullName));
+      setDays(d);
+      setLogs(data.logs || []);
+      setDayIdx(matchIdx >= 0 ? matchIdx : 0);
+      setLoading(false);
+    }
+    setOpen(!open);
+  };
+
+  const day = days[dayIdx];
+
+  useEffect(() => {
+    if (!day) { setEntries([]); return; }
+    const existing = logs.find((l) => l.date === todayISO() && l.dayId === day.id);
+    setEntries(existing?.entries || []);
+  }, [dayIdx, days]);
+
+  const getSetsFor = (dayExId, defaultSets) => {
+    const found = entries.find((e) => e.dayExId === dayExId);
+    if (found) return found.sets;
+    return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
+  };
+
+  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+    const current = getSetsFor(dayExId, defaultSets);
+    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const others = entries.filter((e) => e.dayExId !== dayExId);
+    setEntries([...others, { dayExId, sets: nextSets }]);
+  };
+
+  const saveWorkout = async () => {
+    const data = await sGet(`client:${clientId}`, { program: { days: [] }, logs: [] });
+    const nextLogs = (data.logs || []).filter((l) => !(l.date === todayISO() && l.dayId === day.id));
+    nextLogs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries, loggedBy: "trainer" });
+    await sSet(`client:${clientId}`, { ...data, logs: nextLogs });
+    setLogs(nextLogs);
+    setStatus("Saved");
+    setTimeout(() => setStatus(""), 2500);
+  };
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide log workout" : "Log a workout for them"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        days.length === 0 ? (
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>{clientName} doesn't have a program assigned yet.</div>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+              {days.map((d, i) => (
+                <button
+                  key={d.id}
+                  onClick={() => setDayIdx(i)}
+                  style={{
+                    padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    border: `1px solid ${i === dayIdx ? COLORS.accent : COLORS.border}`,
+                    background: i === dayIdx ? COLORS.accentDim : COLORS.surfaceAlt,
+                    color: i === dayIdx ? COLORS.accent : COLORS.text,
+                  }}
+                >
+                  {d.name}
+                </button>
+              ))}
+            </div>
+            {day && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {day.exercises.map((ex) => {
+                  const exDef = exercises.find((e) => e.id === ex.exerciseId);
+                  const sets = getSetsFor(ex.id, ex.sets);
+                  return (
+                    <div key={ex.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{exDef?.name || "Exercise"}</div>
+                      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {sets.map((s, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
+                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Btn onClick={saveWorkout} style={{ width: "100%", marginTop: 12 }}><Check size={16} /> Save {clientName}'s workout</Btn>
+            {status && <div style={{ fontSize: 11, color: COLORS.lime, marginTop: 8 }}>{status}</div>}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function WorkoutLogViewer({ clientId, exercises }) {
   const [open, setOpen] = useState(false);
   const [logs, setLogs] = useState(null);
@@ -2459,7 +2575,7 @@ function WorkoutLogViewer({ clientId, exercises }) {
               <div key={key} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedLog(isOpen ? null : key)}>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.text }}>{fmtDate(log.date)} — {log.dayName || "Workout"}{log.freeform ? " (self-logged)" : ""}{log.source === "Boot Camp" ? " · Boot Camp" : ""}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.text }}>{fmtDate(log.date)} — {log.dayName || "Workout"}{log.freeform ? " (self-logged)" : ""}{log.source === "Boot Camp" ? " · Boot Camp" : ""}{log.loggedBy === "trainer" ? " · Logged by you" : ""}</div>
                   </div>
                   <ChevronLeft size={13} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
                 </div>
@@ -3179,6 +3295,68 @@ function TemplatesTab({ clients, exercises }) {
     </div>
   );
 }
+function BootCampLogForm({ clientId, day, exercises, onSaved }) {
+  const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const data = await sGet(`client:${clientId}`, { bootcampLogs: [] });
+      const existing = (data.bootcampLogs || []).find((l) => l.date === todayISO() && l.dayId === day.id);
+      setEntries(existing?.entries || []);
+      setLoading(false);
+    })();
+  }, [clientId, day.id]);
+
+  const getSetsFor = (dayExId, defaultSets) => {
+    const found = entries.find((e) => e.dayExId === dayExId);
+    if (found) return found.sets;
+    return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
+  };
+
+  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+    const current = getSetsFor(dayExId, defaultSets);
+    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const others = entries.filter((e) => e.dayExId !== dayExId);
+    setEntries([...others, { dayExId, sets: nextSets }]);
+  };
+
+  const save = async () => {
+    const data = await sGet(`client:${clientId}`, { bootcampLogs: [] });
+    const nextLogs = (data.bootcampLogs || []).filter((l) => !(l.date === todayISO() && l.dayId === day.id));
+    nextLogs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries, loggedBy: "trainer" });
+    await sSet(`client:${clientId}`, { ...data, bootcampLogs: nextLogs });
+    onSaved?.();
+  };
+
+  if (loading) return <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div>;
+
+  return (
+    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+      {day.exercises.map((ex) => {
+        const exDef = exercises.find((e) => e.id === ex.exerciseId);
+        const sets = getSetsFor(ex.id, ex.sets);
+        return (
+          <div key={ex.id}>
+            <div style={{ fontSize: 11, fontWeight: 600 }}>{exDef?.name || "Exercise"} <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>— {ex.sets} × {ex.reps}</span></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+              {sets.map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: COLORS.textMuted, width: 36 }}>Set {i + 1}</span>
+                  <input placeholder="reps" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
+                  <input placeholder="lbs" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <Btn onClick={save} style={{ padding: "8px 12px", fontSize: 12 }}><Check size={14} /> Save</Btn>
+    </div>
+  );
+}
+
 function BootCampAdminTab({ clients, exercises }) {
   const [customTemplates, setCustomTemplates] = useState([]);
   const [globalProgram, setGlobalProgram] = useState(null);
@@ -3189,6 +3367,7 @@ function BootCampAdminTab({ clients, exercises }) {
   const [confirming, setConfirming] = useState(false);
   const [status, setStatus] = useState(null);
   const [roster, setRoster] = useState(null); // clientId -> boolean logged today
+  const [loggingFor, setLoggingFor] = useState(null); // clientId currently showing the log-for-them form
 
   const bootCampClients = clients.filter((c) => c.bootCamp);
 
@@ -3217,18 +3396,20 @@ function BootCampAdminTab({ clients, exercises }) {
   }, [globalProgram]);
 
   useEffect(() => {
-    if (!globalProgram || bootCampClients.length === 0) { setRoster(null); return; }
-    (async () => {
-      const day = days[dayIdx];
-      if (!day) { setRoster(null); return; }
-      const entries = await Promise.all(bootCampClients.map(async (c) => {
-        const data = await sGet(`client:${c.id}`, { bootcampLogs: [] });
-        const logged = (data.bootcampLogs || []).some((l) => l.date === todayISO() && l.dayId === day.id);
-        return [c.id, logged];
-      }));
-      setRoster(Object.fromEntries(entries));
-    })();
+    loadRoster();
   }, [dayIdx, globalProgram, bootCampClients.length]);
+
+  const loadRoster = async () => {
+    if (!globalProgram || bootCampClients.length === 0) { setRoster(null); return; }
+    const day = days[dayIdx];
+    if (!day) { setRoster(null); return; }
+    const entries = await Promise.all(bootCampClients.map(async (c) => {
+      const data = await sGet(`client:${c.id}`, { bootcampLogs: [] });
+      const logged = (data.bootcampLogs || []).some((l) => l.date === todayISO() && l.dayId === day.id);
+      return [c.id, logged];
+    }));
+    setRoster(Object.fromEntries(entries));
+  };
 
   const day = days[dayIdx];
 
@@ -3300,14 +3481,32 @@ function BootCampAdminTab({ clients, exercises }) {
       {day && roster && bootCampClients.length > 0 && (
         <Card style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 10 }}>Logged today — {day.name}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {bootCampClients.map((c) => (
-              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
-                <span>{c.name}</span>
-                {roster[c.id] ? (
-                  <span style={{ color: COLORS.lime, display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> Logged</span>
-                ) : (
-                  <span style={{ color: COLORS.textMuted }}>Not yet</span>
+              <div key={c.id}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                  <span>{c.name}</span>
+                  {roster[c.id] ? (
+                    <span style={{ color: COLORS.lime, display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> Logged</span>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ color: COLORS.textMuted }}>Not yet</span>
+                      <button
+                        onClick={() => setLoggingFor(loggingFor === c.id ? null : c.id)}
+                        style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                      >
+                        {loggingFor === c.id ? "Cancel" : "Log for them"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {loggingFor === c.id && (
+                  <BootCampLogForm
+                    clientId={c.id}
+                    day={day}
+                    exercises={exercises}
+                    onSaved={() => { setLoggingFor(null); loadRoster(); }}
+                  />
                 )}
               </div>
             ))}
