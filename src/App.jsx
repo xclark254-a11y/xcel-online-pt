@@ -381,6 +381,26 @@ function resolveLogExerciseName(log, entry, program, exercises) {
   return ex?.name || "Exercise";
 }
 
+// Finds the most recent previously-logged sets for an exercise (by its library
+// exerciseId, not the per-assignment dayExId) so clients/trainers can see what
+// was done last time for progressive overload — works even across a reassigned
+// program or template, since exerciseId stays stable while dayExId doesn't.
+function findLastSets(logs, exerciseId, excludeDate, excludeDayId) {
+  if (!exerciseId) return null;
+  const sorted = [...(logs || [])]
+    .filter((l) => !(l.date === excludeDate && l.dayId === excludeDayId))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  for (const l of sorted) {
+    const entry = (l.entries || []).find((e) => e.exerciseId === exerciseId);
+    if (entry) return { date: l.date, sets: entry.sets };
+  }
+  return null;
+}
+
+function formatSets(sets) {
+  return (sets || []).map((s) => `${s.weight || "–"}×${s.reps || "–"}`).join(", ");
+}
+
 function mondayOf(dateISO) {
   const d = new Date(dateISO + "T00:00:00");
   const day = d.getDay();
@@ -2465,11 +2485,11 @@ function LogWorkoutForClient({ clientId, clientName, exercises }) {
     return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
   };
 
-  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+  const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, sets: nextSets }]);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const saveWorkout = async () => {
@@ -2514,16 +2534,22 @@ function LogWorkoutForClient({ clientId, clientName, exercises }) {
                 {day.exercises.map((ex) => {
                   const exDef = exercises.find((e) => e.id === ex.exerciseId);
                   const sets = getSetsFor(ex.id, ex.sets);
+                  const last = findLastSets(logs, ex.exerciseId, todayISO(), day.id);
                   return (
                     <div key={ex.id} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
                       <div style={{ fontSize: 12, fontWeight: 600 }}>{exDef?.name || "Exercise"}</div>
                       <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+                      {last && (
+                        <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                          Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+                        </div>
+                      )}
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {sets.map((s, i) => (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
-                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
                           </div>
                         ))}
                       </div>
@@ -3302,12 +3328,15 @@ function TemplatesTab({ clients, exercises }) {
 function BootCampLogForm({ clientId, day, exercises, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState([]);
+  const [logs, setLogs] = useState([]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       const data = await sGet(`client:${clientId}`, { bootcampLogs: [] });
-      const existing = (data.bootcampLogs || []).find((l) => l.date === todayISO() && l.dayId === day.id);
+      const allLogs = data.bootcampLogs || [];
+      const existing = allLogs.find((l) => l.date === todayISO() && l.dayId === day.id);
+      setLogs(allLogs);
       setEntries(existing?.entries || []);
       setLoading(false);
     })();
@@ -3319,11 +3348,11 @@ function BootCampLogForm({ clientId, day, exercises, onSaved }) {
     return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
   };
 
-  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+  const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, sets: nextSets }]);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const save = async () => {
@@ -3341,15 +3370,21 @@ function BootCampLogForm({ clientId, day, exercises, onSaved }) {
       {day.exercises.map((ex) => {
         const exDef = exercises.find((e) => e.id === ex.exerciseId);
         const sets = getSetsFor(ex.id, ex.sets);
+        const last = findLastSets(logs, ex.exerciseId, todayISO(), day.id);
         return (
           <div key={ex.id}>
             <div style={{ fontSize: 11, fontWeight: 600 }}>{exDef?.name || "Exercise"} <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>— {ex.sets} × {ex.reps}</span></div>
+            {last && (
+              <div style={{ fontSize: 10, color: COLORS.accent, marginTop: 2 }}>
+                Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
               {sets.map((s, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10, color: COLORS.textMuted, width: 36 }}>Set {i + 1}</span>
-                  <input placeholder="reps" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
-                  <input placeholder="lbs" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                  <input placeholder="reps" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                  <input placeholder="lbs" style={{ ...inputStyle, width: 60, fontSize: 11 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
                 </div>
               ))}
             </div>
@@ -5019,11 +5054,11 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
     return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
   };
 
-  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+  const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, sets: nextSets }]);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const saveWorkout = async () => {
@@ -5062,10 +5097,16 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
         {day.exercises.map((ex) => {
           const exDef = exercises.find((e) => e.id === ex.exerciseId);
           const sets = getSetsFor(ex.id, ex.sets);
+          const last = findLastSets(bootcampLogs, ex.exerciseId, todayISO(), day.id);
           return (
             <Card key={ex.id}>
               <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
               <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+              {last && (
+                <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                  Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+                </div>
+              )}
               <a
                 href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
                 target="_blank"
@@ -5078,8 +5119,8 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
                 {sets.map((s, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                    <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
-                    <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                    <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                    <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
                   </div>
                 ))}
               </div>
@@ -5366,11 +5407,11 @@ function TodayTab({ data, exercises, onSave, clientName }) {
     return Array.from({ length: Number(defaultSets) || 1 }, () => ({ reps: "", weight: "" }));
   };
 
-  const updateSet = (dayExId, defaultSets, setIdx, field, value) => {
+  const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, sets: nextSets }]);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const saveWorkout = async () => {
@@ -5404,10 +5445,16 @@ function TodayTab({ data, exercises, onSave, clientName }) {
         {day.exercises.map((ex) => {
           const exDef = exercises.find((e) => e.id === ex.exerciseId);
           const sets = getSetsFor(ex.id, ex.sets);
+          const last = findLastSets(data.logs, ex.exerciseId, todayISO(), day.id);
           return (
             <Card key={ex.id}>
               <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
               <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+              {last && (
+                <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                  Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+                </div>
+              )}
               <a
                 href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
                 target="_blank"
@@ -5420,8 +5467,8 @@ function TodayTab({ data, exercises, onSave, clientName }) {
                 {sets.map((s, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                    <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.sets, i, "reps", e.target.value)} />
-                    <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.sets, i, "weight", e.target.value)} />
+                    <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                    <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
                   </div>
                 ))}
               </div>
