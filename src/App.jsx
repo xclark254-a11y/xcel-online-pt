@@ -5093,6 +5093,8 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
         {(data.bootcampScheduleOverrides?.[day.id] || day.dayOfWeek) ? `${data.bootcampScheduleOverrides?.[day.id] || day.dayOfWeek} · ` : ""}{day.exercises.length} exercises
       </div>
 
+      <RestTimer />
+
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {day.exercises.map((ex) => {
           const exDef = exercises.find((e) => e.id === ex.exerciseId);
@@ -5272,6 +5274,102 @@ function FreeformHistory({ logs, exercises, onDelete }) {
   );
 }
 
+function RestTimer() {
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(false);
+  const intervalRef = useRef(null);
+
+  const playAlert = () => {
+    try {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      }
+    } catch (e) {
+      // best-effort only — silently ignore if audio/vibration isn't available
+    }
+  };
+
+  useEffect(() => {
+    if (!running) return;
+    intervalRef.current = setInterval(() => {
+      setSeconds((s) => {
+        if (s <= 1) {
+          clearInterval(intervalRef.current);
+          setRunning(false);
+          playAlert();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(intervalRef.current);
+  }, [running]);
+
+  const start = (dur) => {
+    setSeconds(dur);
+    setRunning(true);
+  };
+  const stop = () => {
+    clearInterval(intervalRef.current);
+    setRunning(false);
+    setSeconds(0);
+  };
+  const addTime = (delta) => setSeconds((s) => Math.max(0, s + delta));
+
+  const mm = Math.floor(seconds / 60);
+  const ss = seconds % 60;
+  const presetBtnStyle = {
+    padding: "6px 10px",
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: "pointer",
+    border: `1px solid ${COLORS.border}`,
+    background: COLORS.surfaceAlt,
+    color: COLORS.text,
+  };
+
+  return (
+    <div style={{ position: "sticky", top: 0, zIndex: 5, background: COLORS.bg, borderBottom: `1px solid ${COLORS.border}`, padding: "10px 0", marginBottom: 14 }}>
+      {seconds > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 28, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent }}>
+              {mm}:{String(ss).padStart(2, "0")}
+            </span>
+            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{running ? "resting…" : "time's up"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => addTime(15)} style={presetBtnStyle}>+15s</button>
+            <button onClick={stop} style={presetBtnStyle}>{running ? "Cancel" : "Dismiss"}</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: COLORS.textMuted, marginRight: 2 }}>Rest timer:</span>
+          {[30, 45, 60, 90, 120].map((d) => (
+            <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
+              {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WeekCalendar({ days, scheduleOverrides, dayIdx, onSelectDay, onMoveDay }) {
   const [movingDayId, setMovingDayId] = useState(null);
   const todayDow = WEEK_DAYS[new Date().getDay()];
@@ -5440,6 +5538,8 @@ function TodayTab({ data, exercises, onSave, clientName }) {
       <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
         {(data.scheduleOverrides?.[day.id] || day.dayOfWeek) ? `${data.scheduleOverrides?.[day.id] || day.dayOfWeek} · ` : ""}{day.exercises.length} exercises
       </div>
+
+      <RestTimer />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {day.exercises.map((ex) => {
