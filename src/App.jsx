@@ -1325,7 +1325,7 @@ const COLORS = {
   surfaceAlt: "#20242B",
   border: "#2A2F38",
   text: "#F2F3F5",
-  textMuted: "#8D93A0",
+  textMuted: "#FFFFFF",
   accent: "#FF4E24",
   accentDim: "#3A2018",
   lime: "#C6FF3D",
@@ -4169,7 +4169,7 @@ function renderBlogInline(text, keyPrefix) {
 
 function BlogBody({ body }) {
   const blocks = (body || "").replace(/\r/g, "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  const textStyle = { fontSize: 15, lineHeight: 1.65, color: "#D6D9DF" };
+  const textStyle = { fontSize: 15, lineHeight: 1.65, color: "#FFFFFF" };
   return (
     <div>
       {blocks.map((block, bi) => {
