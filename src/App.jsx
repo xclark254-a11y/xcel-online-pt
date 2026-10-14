@@ -5349,23 +5349,66 @@ function RestTimer() {
   const [running, setRunning] = useState(false);
   const intervalRef = useRef(null);
 
+  // iPhones only allow sound if the audio is "unlocked" during a tap, so we
+  // create the audio engine when they tap a timer button and reuse it later.
+  const audioCtxRef = useRef(null);
+  const unlockAudio = () => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+      // play a silent blip so iOS fully unlocks sound for this page
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
+    } catch (e) {
+      // ignore — sound is best-effort
+    }
+  };
+
+  const beep = (startAt, freq, length, volume) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + length);
+    osc.start(startAt);
+    osc.stop(startAt + length + 0.02);
+  };
+
+  // short tick for the 3-2-1 countdown
+  const playTick = () => {
+    try {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+      beep(ctx.currentTime, 660, 0.12, 0.25);
+    } catch (e) {}
+  };
+
+  // three loud beeps when rest is over
   const playAlert = () => {
     try {
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (Ctx) {
-        const ctx = new Ctx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.001, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-      }
+      if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+      const t = ctx.currentTime;
+      beep(t, 990, 0.25, 0.5);
+      beep(t + 0.35, 990, 0.25, 0.5);
+      beep(t + 0.7, 1320, 0.5, 0.5);
     } catch (e) {
       // best-effort only — silently ignore if audio/vibration isn't available
     }
@@ -5381,6 +5424,7 @@ function RestTimer() {
           playAlert();
           return 0;
         }
+        if (s <= 4) playTick(); // tick on 3, 2, 1
         return s - 1;
       });
     }, 1000);
@@ -5390,6 +5434,7 @@ function RestTimer() {
   const [open, setOpen] = useState(false);
 
   const start = (dur) => {
+    unlockAudio();
     setSeconds(dur);
     setRunning(true);
     setOpen(false);
