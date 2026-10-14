@@ -371,6 +371,18 @@ function promoteScheduledPrograms(data) {
 }
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Small helpers for saving things on the phone itself (survive the app being
+// closed, minimized or the phone locking).
+const lsGet = (k, fallback = null) => {
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+};
+const lsSet = (k, v) => {
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ }
+};
+const lsDel = (k) => {
+  try { localStorage.removeItem(k); } catch { /* storage unavailable */ }
+};
+
 function resolveLogExerciseName(log, entry, program, exercises) {
   if (log.freeform) {
     return exercises.find((e) => e.id === entry.exerciseId)?.name || "Exercise";
@@ -1507,6 +1519,15 @@ export default function App() {
           return;
         }
       }
+      // Stay logged in: if this phone already signed in, go straight back in.
+      const session = lsGet("xcel_session");
+      const savedClient = session && cl.find((c) => c.id === session.id && c.pin === session.pin);
+      if (savedClient) {
+        setCurrentClient(savedClient);
+        await loadClientData(savedClient.id);
+        setPhase("client");
+        return;
+      }
       setPhase("login");
     })();
   }, []);
@@ -1525,6 +1546,7 @@ export default function App() {
 
     window.history.replaceState({}, "", window.location.pathname);
     setCurrentClient(newClient);
+    lsSet("xcel_session", { id: newClient.id, pin: newClient.pin });
     await loadClientData(newClient.id);
     setPhase("client");
   };
@@ -1569,6 +1591,7 @@ export default function App() {
         clients={clients}
         onClientLogin={async (client) => {
           setCurrentClient(client);
+          lsSet("xcel_session", { id: client.id, pin: client.pin });
           await loadClientData(client.id);
           setPhase("client");
         }}
@@ -1616,6 +1639,8 @@ export default function App() {
         data={clientData}
         onSave={(d) => saveClientData(currentClient.id, d)}
         onLogout={() => {
+          lsDel("xcel_session");
+          lsDel("xcel_client_tab");
           setCurrentClient(null);
           setClientData(null);
           setPhase("login");
@@ -4931,7 +4956,11 @@ function IntakeForm({ data, onSave, onClose }) {
 }
 
 function ClientApp({ client, exercises, data, onSave, onLogout }) {
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useState(() => {
+    const saved = lsGet("xcel_client_tab", "today");
+    return saved === "bootcamp" && !client.bootCamp ? "today" : saved;
+  });
+  useEffect(() => { lsSet("xcel_client_tab", tab); }, [tab]);
   const [showIntake, setShowIntake] = useState(false);
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
@@ -5065,16 +5094,23 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
 function BootCampTab({ data, exercises, onSave, clientName }) {
   const days = data.bootcampProgram?.days || [];
-  const [dayIdx, setDayIdx] = useState(0);
+  const [dayIdx, setDayIdx] = useState(() => {
+    const saved = lsGet("xcel_dayidx_bootcamp");
+    return saved && saved.date === todayISO() && saved.idx < days.length ? saved.idx : 0;
+  });
+  useEffect(() => { lsSet("xcel_dayidx_bootcamp", { date: todayISO(), idx: dayIdx }); }, [dayIdx]);
   const day = days[dayIdx];
+  // Unsaved sets are kept on the phone until they hit Save, so nothing is lost if the app closes.
+  const draftKey = day ? `xcel_draft_${day.id}_${todayISO()}` : null;
   const bootcampLogs = data.bootcampLogs || [];
   const todayLog = useMemo(() => bootcampLogs.find((l) => l.date === todayISO() && l.dayId === day?.id), [bootcampLogs, day]);
-  const [entries, setEntries] = useState(() => todayLog?.entries || []);
-  const [minimized, setMinimized] = useState(() => !!todayLog);
+  const [entries, setEntries] = useState(() => (draftKey && lsGet(draftKey)) || todayLog?.entries || []);
+  const [minimized, setMinimized] = useState(() => !!todayLog && !(draftKey && lsGet(draftKey)));
 
   useEffect(() => {
-    setEntries(todayLog?.entries || []);
-    setMinimized(!!todayLog);
+    const draft = draftKey && lsGet(draftKey);
+    setEntries(draft || todayLog?.entries || []);
+    setMinimized(!!todayLog && !draft);
   }, [dayIdx, todayLog]);
 
   const notifyTrainer = async (workoutLabel) => {
@@ -5100,13 +5136,16 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
+    const next = [...others, { dayExId, exerciseId, sets: nextSets }];
+    setEntries(next);
+    if (draftKey) lsSet(draftKey, next);
   };
 
   const saveWorkout = async () => {
     const logs = bootcampLogs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
     logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
     await onSave({ ...data, bootcampLogs: logs });
+    if (draftKey) lsDel(draftKey);
     notifyTrainer(day.name);
     setMinimized(true);
   };
@@ -5648,16 +5687,23 @@ function WeekCalendar({ days, scheduleOverrides, dayIdx, onSelectDay, onMoveDay 
 
 function TodayTab({ data, exercises, onSave, clientName }) {
   const days = data.program?.days || [];
-  const [dayIdx, setDayIdx] = useState(0);
+  const [dayIdx, setDayIdx] = useState(() => {
+    const saved = lsGet("xcel_dayidx_today");
+    return saved && saved.date === todayISO() && saved.idx < days.length ? saved.idx : 0;
+  });
+  useEffect(() => { lsSet("xcel_dayidx_today", { date: todayISO(), idx: dayIdx }); }, [dayIdx]);
   const day = days[dayIdx];
+  // Unsaved sets are kept on the phone until they hit Save, so nothing is lost if the app closes.
+  const draftKey = day ? `xcel_draft_${day.id}_${todayISO()}` : null;
   const todayLog = useMemo(() => data.logs.find((l) => l.date === todayISO() && l.dayId === day?.id), [data.logs, day]);
-  const [entries, setEntries] = useState(() => todayLog?.entries || []);
-  const [minimized, setMinimized] = useState(() => !!todayLog);
+  const [entries, setEntries] = useState(() => (draftKey && lsGet(draftKey)) || todayLog?.entries || []);
+  const [minimized, setMinimized] = useState(() => !!todayLog && !(draftKey && lsGet(draftKey)));
   const [showFreeform, setShowFreeform] = useState(false);
 
   useEffect(() => {
-    setEntries(todayLog?.entries || []);
-    setMinimized(!!todayLog);
+    const draft = draftKey && lsGet(draftKey);
+    setEntries(draft || todayLog?.entries || []);
+    setMinimized(!!todayLog && !draft);
   }, [dayIdx, todayLog]);
   // Which exercise cards are expanded. Starts with just the first one open.
   const [openEx, setOpenEx] = useState(() => (day?.exercises?.[0] ? [day.exercises[0].id] : []));
@@ -5713,13 +5759,16 @@ function TodayTab({ data, exercises, onSave, clientName }) {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
+    const next = [...others, { dayExId, exerciseId, sets: nextSets }];
+    setEntries(next);
+    if (draftKey) lsSet(draftKey, next);
   };
 
   const saveWorkout = async () => {
     const logs = data.logs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
     logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
     await onSave({ ...data, logs });
+    if (draftKey) lsDel(draftKey);
     notifyTrainer(day.name);
     setMinimized(true);
   };
