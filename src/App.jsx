@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip } from "lucide-react";
+import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip, ChevronDown, History, Timer } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 import { DEFAULT_BLOG_POSTS, BLOG_CATEGORIES } from "./blogPosts";
@@ -4936,6 +4936,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
+    { id: "history", label: "History", icon: History },
     ...(client.bootCamp ? [{ id: "bootcamp", label: "Boot Camp", icon: Flame }] : []),
     { id: "mobility", label: "Mobility", icon: Activity },
     { id: "library", label: "Library", icon: Dumbbell },
@@ -5012,6 +5013,7 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
+        {tab === "history" && <WorkoutHistoryTab data={data} exercises={exercises} />}
         {tab === "bootcamp" && <BootCampTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
         {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
@@ -5385,9 +5387,12 @@ function RestTimer() {
     return () => clearInterval(intervalRef.current);
   }, [running]);
 
+  const [open, setOpen] = useState(false);
+
   const start = (dur) => {
     setSeconds(dur);
     setRunning(true);
+    setOpen(false);
   };
   const stop = () => {
     clearInterval(intervalRef.current);
@@ -5399,9 +5404,9 @@ function RestTimer() {
   const mm = Math.floor(seconds / 60);
   const ss = seconds % 60;
   const presetBtnStyle = {
-    padding: "6px 10px",
-    borderRadius: 8,
-    fontSize: 11,
+    padding: "10px 12px",
+    borderRadius: 10,
+    fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
     border: `1px solid ${COLORS.border}`,
@@ -5409,29 +5414,103 @@ function RestTimer() {
     color: COLORS.text,
   };
 
+  // Floating timer: stays in the bottom-right corner above the tab bar,
+  // so it's always one tap away no matter how far down the workout you are.
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 5, background: COLORS.bg, borderBottom: `1px solid ${COLORS.border}`, padding: "10px 0", marginBottom: 14 }}>
-      {seconds > 0 ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 28, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent }}>
-              {mm}:{String(ss).padStart(2, "0")}
-            </span>
-            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{running ? "resting…" : "time's up"}</span>
-          </div>
+    <div style={{ position: "fixed", right: 16, bottom: "calc(76px + env(safe-area-inset-bottom))", zIndex: 40, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+      {open && seconds === 0 && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Rest timer</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => addTime(15)} style={presetBtnStyle}>+15s</button>
-            <button onClick={stop} style={presetBtnStyle}>{running ? "Cancel" : "Dismiss"}</button>
+            {[30, 45, 60, 90, 120].map((d) => (
+              <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
+                {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
+              </button>
+            ))}
           </div>
         </div>
+      )}
+      {seconds > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: COLORS.surface, border: `1px solid ${running && seconds <= 5 ? COLORS.danger : COLORS.accent}`, borderRadius: 999, padding: "6px 6px 6px 16px", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 22, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent, minWidth: 54 }}>
+            {running ? `${mm}:${String(ss).padStart(2, "0")}` : "Done!"}
+          </span>
+          {running && <button onClick={() => addTime(15)} style={{ ...presetBtnStyle, borderRadius: 999, padding: "8px 12px" }}>+15s</button>}
+          <button onClick={stop} aria-label={running ? "Cancel timer" : "Dismiss timer"} style={{ ...presetBtnStyle, borderRadius: 999, padding: 8, display: "flex" }}>
+            <X size={16} />
+          </button>
+        </div>
       ) : (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: COLORS.textMuted, marginRight: 2 }}>Rest timer:</span>
-          {[30, 45, 60, 90, 120].map((d) => (
-            <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
-              {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
-            </button>
-          ))}
+        <button
+          onClick={() => setOpen(!open)}
+          aria-label="Rest timer"
+          style={{ width: 52, height: 52, borderRadius: 999, border: "none", background: COLORS.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}
+        >
+          {open ? <X size={22} /> : <Timer size={22} />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WorkoutHistoryTab({ data, exercises }) {
+  const [expanded, setExpanded] = useState(null);
+  const logs = useMemo(() => {
+    const personal = (data.logs || []).map((l) => ({ ...l, source: "Personal" }));
+    const bootcamp = (data.bootcampLogs || []).map((l) => ({ ...l, source: "Boot Camp" }));
+    return [...personal, ...bootcamp].sort((a, b) => b.date.localeCompare(a.date));
+  }, [data.logs, data.bootcampLogs]);
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, marginBottom: 4 }}>Workout History</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        {logs.length} workout{logs.length === 1 ? "" : "s"} logged. Tap one to see what you did.
+      </div>
+
+      {logs.length === 0 ? (
+        <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
+          No workouts logged yet. Once you save a workout, it'll show up here.
+        </Card>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {logs.map((log, li) => {
+            const key = log.id || `${log.date}-${log.dayId}-${li}`;
+            const isOpen = expanded === key;
+            const program = log.source === "Boot Camp" ? data.bootcampProgram : data.program;
+            return (
+              <Card key={key} style={{ padding: 0 }}>
+                <button
+                  onClick={() => setExpanded(isOpen ? null : key)}
+                  style={{ width: "100%", background: "none", border: "none", color: COLORS.text, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left" }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{log.dayName || "Workout"}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                      {fmtDate(log.date)} · {(log.entries || []).length} exercises{log.source === "Boot Camp" ? " · Boot Camp" : ""}{log.freeform ? " · Self-logged" : ""}
+                    </div>
+                  </div>
+                  <ChevronDown size={18} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none", flexShrink: 0 }} />
+                </button>
+                {isOpen && (
+                  <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    {(log.entries || []).map((entry, i) => (
+                      <div key={i}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.accent, marginBottom: 2 }}>
+                          {exercises.find((e) => e.id === entry.exerciseId)?.name || resolveLogExerciseName(log, entry, program || { days: [] }, exercises)}
+                        </div>
+                        {(entry.sets || []).map((s, si) => (
+                          <div key={si} style={{ fontSize: 12, color: COLORS.textMuted, paddingLeft: 8 }}>
+                            Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
@@ -5535,6 +5614,16 @@ function TodayTab({ data, exercises, onSave, clientName }) {
     setEntries(todayLog?.entries || []);
     setMinimized(!!todayLog);
   }, [dayIdx, todayLog]);
+  // Which exercise cards are expanded. Starts with just the first one open.
+  const [openEx, setOpenEx] = useState(() => (day?.exercises?.[0] ? [day.exercises[0].id] : []));
+
+  useEffect(() => {
+    setOpenEx(day?.exercises?.[0] ? [day.exercises[0].id] : []);
+  }, [dayIdx]);
+
+  const toggleEx = (id) => setOpenEx((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const allOpen = day?.exercises?.length > 0 && openEx.length === day.exercises.length;
+  const toggleAll = () => setOpenEx(allOpen ? [] : (day?.exercises || []).map((ex) => ex.id));
 
   const notifyTrainer = async (workoutLabel) => {
     const trainerSub = await sGet("app:trainerPushSubscription", null);
@@ -5637,37 +5726,62 @@ function TodayTab({ data, exercises, onSave, clientName }) {
         </Card>
       ) : (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <button onClick={toggleAll} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "4px 0" }}>
+              {allOpen ? "Collapse all" : "Expand all"}
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {day.exercises.map((ex) => {
               const exDef = exercises.find((e) => e.id === ex.exerciseId);
               const sets = getSetsFor(ex.id, ex.sets);
               const last = findLastSets(data.logs, ex.exerciseId, todayISO(), day.id);
+              const isOpen = openEx.includes(ex.id);
+              const doneSets = sets.filter((s) => s.reps || s.weight).length;
+              const allDone = doneSets === sets.length && sets.length > 0;
               return (
-                <Card key={ex.id}>
-                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
-                  <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
-                  {last && (
-                    <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
-                      Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+                <Card key={ex.id} style={{ padding: 0 }}>
+                  <button
+                    onClick={() => toggleEx(ex.id)}
+                    style={{ width: "100%", background: "none", border: "none", color: COLORS.text, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer", textAlign: "left" }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Target: {ex.sets} × {ex.reps}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: allDone ? COLORS.lime : COLORS.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
+                        {allDone && <Check size={13} />}{doneSets}/{sets.length} sets
+                      </span>
+                      <ChevronDown size={18} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none" }} />
+                    </div>
+                  </button>
+                  {isOpen && (
+                    <div style={{ padding: "0 16px 16px" }}>
+                      {last && (
+                        <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                          Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
+                        </div>
+                      )}
+                      <a
+                        href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+                      >
+                        Watch example ↗
+                      </a>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {sets.map((s, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  <a
-                    href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
-                  >
-                    Watch example ↗
-                  </a>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sets.map((s, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                        <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
-                        <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
-                      </div>
-                    ))}
-                  </div>
                 </Card>
               );
             })}
