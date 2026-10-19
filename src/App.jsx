@@ -372,9 +372,19 @@ function promoteScheduledPrograms(data) {
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 function resolveLogExerciseName(log, entry, program, exercises) {
-  if (log.freeform) {
-    return exercises.find((e) => e.id === entry.exerciseId)?.name || "Exercise";
+  // entry.exerciseId points straight at the library exercise and stays valid
+  // even after the client's program is edited, reassigned, or replaced —
+  // check it first so old logs don't go stale just because today's program
+  // looks different than it did when the workout was saved.
+  if (entry.exerciseId) {
+    const ex = exercises.find((e) => e.id === entry.exerciseId);
+    if (ex) return ex.name;
   }
+  if (log.freeform) {
+    return "Exercise";
+  }
+  // Fallback for older entries saved before exerciseId was recorded directly
+  // on the entry — resolve through the day/dayExId as it existed back then.
   const day = (program?.days || []).find((d) => d.id === log.dayId);
   const dayEx = day?.exercises.find((de) => de.id === entry.dayExId);
   const ex = exercises.find((e) => e.id === dayEx?.exerciseId);
