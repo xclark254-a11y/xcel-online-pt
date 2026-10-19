@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip, ChevronDown, History, Timer } from "lucide-react";
+import { BookOpen, Dumbbell, Search, User, Settings, MessageCircle, TrendingUp, CalendarDays, Plus, X, Check, ChevronLeft, Trash2, Edit3, Send, LogOut, Lock, Layers, Apple, FileText, Flame, Star, ScanLine, Activity, Users, Megaphone, Bell, BellOff, Clock, Image as ImageIcon, CreditCard, RefreshCw, Video, Paperclip } from "lucide-react";
 import { USDA_API_KEY } from "./nutritionConfig";
 import { sGet, sSet } from "./firebase";
 import { DEFAULT_BLOG_POSTS, BLOG_CATEGORIES } from "./blogPosts";
@@ -370,18 +370,6 @@ function promoteScheduledPrograms(data) {
   };
 }
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-
-// Small helpers for saving things on the phone itself (survive the app being
-// closed, minimized or the phone locking).
-const lsGet = (k, fallback = null) => {
-  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
-};
-const lsSet = (k, v) => {
-  try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ }
-};
-const lsDel = (k) => {
-  try { localStorage.removeItem(k); } catch { /* storage unavailable */ }
-};
 
 function resolveLogExerciseName(log, entry, program, exercises) {
   if (log.freeform) {
@@ -1519,15 +1507,6 @@ export default function App() {
           return;
         }
       }
-      // Stay logged in: if this phone already signed in, go straight back in.
-      const session = lsGet("xcel_session");
-      const savedClient = session && cl.find((c) => c.id === session.id && c.pin === session.pin);
-      if (savedClient) {
-        setCurrentClient(savedClient);
-        await loadClientData(savedClient.id);
-        setPhase("client");
-        return;
-      }
       setPhase("login");
     })();
   }, []);
@@ -1546,7 +1525,6 @@ export default function App() {
 
     window.history.replaceState({}, "", window.location.pathname);
     setCurrentClient(newClient);
-    lsSet("xcel_session", { id: newClient.id, pin: newClient.pin });
     await loadClientData(newClient.id);
     setPhase("client");
   };
@@ -1591,7 +1569,6 @@ export default function App() {
         clients={clients}
         onClientLogin={async (client) => {
           setCurrentClient(client);
-          lsSet("xcel_session", { id: client.id, pin: client.pin });
           await loadClientData(client.id);
           setPhase("client");
         }}
@@ -1639,8 +1616,6 @@ export default function App() {
         data={clientData}
         onSave={(d) => saveClientData(currentClient.id, d)}
         onLogout={() => {
-          lsDel("xcel_session");
-          lsDel("xcel_client_tab");
           setCurrentClient(null);
           setClientData(null);
           setPhase("login");
@@ -2284,6 +2259,7 @@ function ClientsTab({ clients, exercises, onRefresh }) {
             <IntakeViewer clientId={c.id} />
             <NutritionViewer clientId={c.id} />
             <ProgressPhotosViewer clientId={c.id} />
+            <BodyStatsViewer clientId={c.id} />
             <LogWorkoutForClient clientId={c.id} clientName={c.name} exercises={exercises} />
             <WorkoutLogViewer clientId={c.id} exercises={exercises} />
             <ProgramScheduleViewer clientId={c.id} />
@@ -2465,6 +2441,162 @@ function ProgressPhotosViewer({ clientId }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewing(null)}>
           <img src={viewing.url} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
           <div style={{ color: "#fff", fontSize: 13, marginTop: 14 }}>{fmtDate(viewing.date)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BodyStatsViewer({ clientId }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [weight, setWeight] = useState("");
+  const [bodyFat, setBodyFat] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const d = await sGet(`client:${clientId}`, { bodyStats: [], intake: {} });
+    setData(d);
+    setLoading(false);
+  };
+
+  const toggle = async () => {
+    if (!open && data === null) await load();
+    setOpen(!open);
+  };
+
+  const entries = useMemo(() => [...((data?.bodyStats) || [])].sort((a, b) => a.date.localeCompare(b.date)), [data]);
+  const latest = entries[entries.length - 1];
+  const intake = data?.intake || {};
+
+  const bmi = latest ? computeBMI(latest.weight, intake.heightIn) : null;
+  const bmr = latest ? computeBMR(latest.weight, intake.heightIn, intake.age, intake.gender) : null;
+  const leanMass = latest?.bodyFat ? (Number(latest.weight) * (1 - Number(latest.bodyFat) / 100)).toFixed(1) : null;
+  const fatMass = latest?.bodyFat ? (Number(latest.weight) * (Number(latest.bodyFat) / 100)).toFixed(1) : null;
+
+  const addEntry = async () => {
+    if (!weight.trim()) return;
+    setSaving(true);
+    const fresh = await sGet(`client:${clientId}`, { bodyStats: [], intake: {} });
+    const others = (fresh.bodyStats || []).filter((e) => e.date !== todayISO());
+    const next = [...others, { id: uid(), date: todayISO(), weight: Number(weight), bodyFat: bodyFat ? Number(bodyFat) : null, loggedBy: "trainer" }];
+    const nextData = { ...fresh, bodyStats: next };
+    await sSet(`client:${clientId}`, nextData);
+    setData(nextData);
+    setWeight("");
+    setBodyFat("");
+    setSaving(false);
+  };
+
+  const removeEntry = async (id) => {
+    const fresh = await sGet(`client:${clientId}`, { bodyStats: [], intake: {} });
+    const nextData = { ...fresh, bodyStats: (fresh.bodyStats || []).filter((e) => e.id !== id) };
+    await sSet(`client:${clientId}`, nextData);
+    setData(nextData);
+  };
+
+  const weightChart = entries.filter((e) => e.weight).map((e) => ({ date: fmtDate(e.date), value: e.weight, raw: e.date }));
+  const fatChart = entries.filter((e) => e.bodyFat != null).map((e) => ({ date: fmtDate(e.date), value: e.bodyFat, raw: e.date }));
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button onClick={toggle} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 11, cursor: "pointer", padding: 0 }}>
+        {open ? "Hide weight / body fat" : "View weight / body fat"}
+      </button>
+      {open && (
+        loading ? <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Loading…</div> :
+        <div style={{ marginTop: 10 }}>
+          {!intake.heightIn && (
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>This client hasn't added their height yet, so BMI can't be calculated.</div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            <input type="number" style={{ ...inputStyle, width: 110 }} placeholder="Weight (lbs)" value={weight} onChange={(e) => setWeight(e.target.value)} />
+            <input type="number" style={{ ...inputStyle, width: 130 }} placeholder="Body fat % (optional)" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} />
+            <Btn onClick={addEntry} disabled={saving} style={{ padding: "8px 14px", fontSize: 12 }}>{saving ? "Saving…" : "Log"}</Btn>
+          </div>
+
+          {!latest ? (
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>No weight or body fat logged yet.</div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8, marginBottom: 14 }}>
+                {bmi && (
+                  <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>BMI</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmi.toFixed(1)}</div>
+                    <div style={{ fontSize: 10, color: COLORS.accent }}>{bmiCategory(bmi)}</div>
+                  </div>
+                )}
+                {bmr && (
+                  <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>Est. BMR</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{bmr}</div>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>cal/day at rest</div>
+                  </div>
+                )}
+                {leanMass && (
+                  <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>Lean mass</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{leanMass} lbs</div>
+                  </div>
+                )}
+                {fatMass && (
+                  <div style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>Fat mass</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>{fatMass} lbs</div>
+                  </div>
+                )}
+              </div>
+
+              {weightChart.length >= 2 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>Weight over time</div>
+                  <div style={{ width: "100%", height: 140 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={weightChart}>
+                        <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                        <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                        <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                        <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                        <Line type="monotone" dataKey="value" stroke={COLORS.lime} strokeWidth={2} dot={{ r: 3, fill: COLORS.lime }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {fatChart.length >= 2 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>Body fat % over time</div>
+                  <div style={{ width: "100%", height: 140 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={fatChart}>
+                        <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                        <XAxis dataKey="date" stroke={COLORS.textMuted} fontSize={10} />
+                        <YAxis stroke={COLORS.textMuted} fontSize={10} domain={["auto", "auto"]} />
+                        <Tooltip contentStyle={{ background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} />
+                        <Line type="monotone" dataKey="value" stroke={COLORS.accent} strokeWidth={2} dot={{ r: 3, fill: COLORS.accent }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                {[...entries].reverse().slice(0, 6).map((e) => (
+                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>
+                      {fmtDate(e.date)} — {e.weight} lbs{e.bodyFat != null ? ` · ${e.bodyFat}% BF` : ""}{e.loggedBy === "trainer" ? " · logged by you" : ""}
+                    </div>
+                    <button onClick={() => removeEntry(e.id)} style={{ background: "none", border: "none", color: COLORS.danger, cursor: "pointer" }}><Trash2 size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -4956,16 +5088,11 @@ function IntakeForm({ data, onSave, onClose }) {
 }
 
 function ClientApp({ client, exercises, data, onSave, onLogout }) {
-  const [tab, setTab] = useState(() => {
-    const saved = lsGet("xcel_client_tab", "today");
-    return saved === "bootcamp" && !client.bootCamp ? "today" : saved;
-  });
-  useEffect(() => { lsSet("xcel_client_tab", tab); }, [tab]);
+  const [tab, setTab] = useState("today");
   const [showIntake, setShowIntake] = useState(false);
   const [autoPromptShown, setAutoPromptShown] = useState(false);
   const tabs = [
     { id: "today", label: "Today", icon: CalendarDays },
-    { id: "history", label: "History", icon: History },
     ...(client.bootCamp ? [{ id: "bootcamp", label: "Boot Camp", icon: Flame }] : []),
     { id: "mobility", label: "Mobility", icon: Activity },
     { id: "library", label: "Library", icon: Dumbbell },
@@ -5042,7 +5169,6 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, paddingBottom: 90 }}>
         {tab === "today" && <TodayTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
-        {tab === "history" && <WorkoutHistoryTab data={data} exercises={exercises} />}
         {tab === "bootcamp" && <BootCampTab data={data} exercises={exercises} onSave={onSave} clientName={client.name} />}
         {tab === "mobility" && <ClientMobility data={data} onSave={onSave} />}
         {tab === "library" && <ClientLibrary exercises={exercises} />}
@@ -5094,34 +5220,17 @@ function ClientApp({ client, exercises, data, onSave, onLogout }) {
 
 function BootCampTab({ data, exercises, onSave, clientName }) {
   const days = data.bootcampProgram?.days || [];
-  const [dayIdx, setDayIdx] = useState(() => {
-    const saved = lsGet("xcel_dayidx_bootcamp");
-    return saved && saved.date === todayISO() && saved.idx < days.length ? saved.idx : 0;
-  });
-  useEffect(() => { lsSet("xcel_dayidx_bootcamp", { date: todayISO(), idx: dayIdx }); }, [dayIdx]);
+  const [dayIdx, setDayIdx] = useState(0);
   const day = days[dayIdx];
-  // Unsaved sets are kept on the phone until they hit Save, so nothing is lost if the app closes.
-  const draftKey = day ? `xcel_draft_${day.id}_${todayISO()}` : null;
   const bootcampLogs = data.bootcampLogs || [];
   const todayLog = useMemo(() => bootcampLogs.find((l) => l.date === todayISO() && l.dayId === day?.id), [bootcampLogs, day]);
-  const [entries, setEntries] = useState(() => (draftKey && lsGet(draftKey)) || todayLog?.entries || []);
-  const [minimized, setMinimized] = useState(() => !!todayLog && !(draftKey && lsGet(draftKey)));
+  const [entries, setEntries] = useState(() => todayLog?.entries || []);
+  const [minimized, setMinimized] = useState(() => !!todayLog);
 
   useEffect(() => {
-    const draft = draftKey && lsGet(draftKey);
-    setEntries(draft || todayLog?.entries || []);
-    setMinimized(!!todayLog && !draft);
+    setEntries(todayLog?.entries || []);
+    setMinimized(!!todayLog);
   }, [dayIdx, todayLog]);
-  // Which exercise cards are expanded. Starts with just the first one open.
-  const [openEx, setOpenEx] = useState(() => (day?.exercises?.[0] ? [day.exercises[0].id] : []));
-
-  useEffect(() => {
-    setOpenEx(day?.exercises?.[0] ? [day.exercises[0].id] : []);
-  }, [dayIdx]);
-
-  const toggleEx = (id) => setOpenEx((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  const allOpen = day?.exercises?.length > 0 && openEx.length === day.exercises.length;
-  const toggleAll = () => setOpenEx(allOpen ? [] : (day?.exercises || []).map((ex) => ex.id));
 
   const notifyTrainer = async (workoutLabel) => {
     const trainerSub = await sGet("app:trainerPushSubscription", null);
@@ -5146,16 +5255,13 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    const next = [...others, { dayExId, exerciseId, sets: nextSets }];
-    setEntries(next);
-    if (draftKey) lsSet(draftKey, next);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const saveWorkout = async () => {
     const logs = bootcampLogs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
     logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
     await onSave({ ...data, bootcampLogs: logs });
-    if (draftKey) lsDel(draftKey);
     notifyTrainer(day.name);
     setMinimized(true);
   };
@@ -5212,62 +5318,37 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
         </Card>
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            <button onClick={toggleAll} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "4px 0" }}>
-              {allOpen ? "Collapse all" : "Expand all"}
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {day.exercises.map((ex) => {
               const exDef = exercises.find((e) => e.id === ex.exerciseId);
               const sets = getSetsFor(ex.id, ex.sets);
               const last = findLastSets(bootcampLogs, ex.exerciseId, todayISO(), day.id);
-              const isOpen = openEx.includes(ex.id);
-              const doneSets = sets.filter((s) => s.reps || s.weight).length;
-              const allDone = doneSets === sets.length && sets.length > 0;
               return (
-                <Card key={ex.id} style={{ padding: 0 }}>
-                  <button
-                    onClick={() => toggleEx(ex.id)}
-                    style={{ width: "100%", background: "none", border: "none", color: COLORS.text, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer", textAlign: "left" }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
-                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Target: {ex.sets} × {ex.reps}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: allDone ? COLORS.lime : COLORS.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
-                        {allDone && <Check size={13} />}{doneSets}/{sets.length} sets
-                      </span>
-                      <ChevronDown size={18} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none" }} />
-                    </div>
-                  </button>
-                  {isOpen && (
-                    <div style={{ padding: "0 16px 16px" }}>
-                      {last && (
-                        <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
-                          Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
-                        </div>
-                      )}
-                      <a
-                        href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
-                      >
-                        Watch example ↗
-                      </a>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {sets.map((s, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
-                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
-                          </div>
-                        ))}
-                      </div>
+                <Card key={ex.id}>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
+                  <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+                  {last && (
+                    <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                      Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
                     </div>
                   )}
+                  <a
+                    href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+                  >
+                    Watch example ↗
+                  </a>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {sets.map((s, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                        <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                        <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
+                      </div>
+                    ))}
+                  </div>
                 </Card>
               );
             })}
@@ -5423,66 +5504,23 @@ function RestTimer() {
   const [running, setRunning] = useState(false);
   const intervalRef = useRef(null);
 
-  // iPhones only allow sound if the audio is "unlocked" during a tap, so we
-  // create the audio engine when they tap a timer button and reuse it later.
-  const audioCtxRef = useRef(null);
-  const unlockAudio = () => {
-    try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
-      // play a silent blip so iOS fully unlocks sound for this page
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0.0001;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.05);
-    } catch (e) {
-      // ignore — sound is best-effort
-    }
-  };
-
-  const beep = (startAt, freq, length, volume) => {
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    gain.gain.setValueAtTime(0.0001, startAt);
-    gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + length);
-    osc.start(startAt);
-    osc.stop(startAt + length + 0.02);
-  };
-
-  // short tick for the 3-2-1 countdown
-  const playTick = () => {
-    try {
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      if (ctx.state === "suspended") ctx.resume();
-      beep(ctx.currentTime, 660, 0.12, 0.25);
-    } catch (e) {}
-  };
-
-  // three loud beeps when rest is over
   const playAlert = () => {
     try {
-      if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      if (ctx.state === "suspended") ctx.resume();
-      const t = ctx.currentTime;
-      beep(t, 990, 0.25, 0.5);
-      beep(t + 0.35, 990, 0.25, 0.5);
-      beep(t + 0.7, 1320, 0.5, 0.5);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      }
     } catch (e) {
       // best-effort only — silently ignore if audio/vibration isn't available
     }
@@ -5498,20 +5536,15 @@ function RestTimer() {
           playAlert();
           return 0;
         }
-        if (s <= 4) playTick(); // tick on 3, 2, 1
         return s - 1;
       });
     }, 1000);
     return () => clearInterval(intervalRef.current);
   }, [running]);
 
-  const [open, setOpen] = useState(false);
-
   const start = (dur) => {
-    unlockAudio();
     setSeconds(dur);
     setRunning(true);
-    setOpen(false);
   };
   const stop = () => {
     clearInterval(intervalRef.current);
@@ -5523,9 +5556,9 @@ function RestTimer() {
   const mm = Math.floor(seconds / 60);
   const ss = seconds % 60;
   const presetBtnStyle = {
-    padding: "10px 12px",
-    borderRadius: 10,
-    fontSize: 13,
+    padding: "6px 10px",
+    borderRadius: 8,
+    fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
     border: `1px solid ${COLORS.border}`,
@@ -5533,103 +5566,29 @@ function RestTimer() {
     color: COLORS.text,
   };
 
-  // Floating timer: stays in the bottom-right corner above the tab bar,
-  // so it's always one tap away no matter how far down the workout you are.
   return (
-    <div style={{ position: "fixed", right: 16, bottom: "calc(76px + env(safe-area-inset-bottom))", zIndex: 40, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-      {open && seconds === 0 && (
-        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Rest timer</div>
+    <div style={{ position: "sticky", top: 0, zIndex: 5, background: COLORS.bg, borderBottom: `1px solid ${COLORS.border}`, padding: "10px 0", marginBottom: 14 }}>
+      {seconds > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 28, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent }}>
+              {mm}:{String(ss).padStart(2, "0")}
+            </span>
+            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{running ? "resting…" : "time's up"}</span>
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[30, 45, 60, 90, 120].map((d) => (
-              <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
-                {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
-              </button>
-            ))}
+            <button onClick={() => addTime(15)} style={presetBtnStyle}>+15s</button>
+            <button onClick={stop} style={presetBtnStyle}>{running ? "Cancel" : "Dismiss"}</button>
           </div>
         </div>
-      )}
-      {seconds > 0 ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: COLORS.surface, border: `1px solid ${running && seconds <= 5 ? COLORS.danger : COLORS.accent}`, borderRadius: 999, padding: "6px 6px 6px 16px", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
-          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 22, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent, minWidth: 54 }}>
-            {running ? `${mm}:${String(ss).padStart(2, "0")}` : "Done!"}
-          </span>
-          {running && <button onClick={() => addTime(15)} style={{ ...presetBtnStyle, borderRadius: 999, padding: "8px 12px" }}>+15s</button>}
-          <button onClick={stop} aria-label={running ? "Cancel timer" : "Dismiss timer"} style={{ ...presetBtnStyle, borderRadius: 999, padding: 8, display: "flex" }}>
-            <X size={16} />
-          </button>
-        </div>
       ) : (
-        <button
-          onClick={() => setOpen(!open)}
-          aria-label="Rest timer"
-          style={{ width: 52, height: 52, borderRadius: 999, border: "none", background: COLORS.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}
-        >
-          {open ? <X size={22} /> : <Timer size={22} />}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function WorkoutHistoryTab({ data, exercises }) {
-  const [expanded, setExpanded] = useState(null);
-  const logs = useMemo(() => {
-    const personal = (data.logs || []).map((l) => ({ ...l, source: "Personal" }));
-    const bootcamp = (data.bootcampLogs || []).map((l) => ({ ...l, source: "Boot Camp" }));
-    return [...personal, ...bootcamp].sort((a, b) => b.date.localeCompare(a.date));
-  }, [data.logs, data.bootcampLogs]);
-
-  return (
-    <div>
-      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, marginBottom: 4 }}>Workout History</div>
-      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
-        {logs.length} workout{logs.length === 1 ? "" : "s"} logged. Tap one to see what you did.
-      </div>
-
-      {logs.length === 0 ? (
-        <Card style={{ textAlign: "center", color: COLORS.textMuted }}>
-          No workouts logged yet. Once you save a workout, it'll show up here.
-        </Card>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {logs.map((log, li) => {
-            const key = log.id || `${log.date}-${log.dayId}-${li}`;
-            const isOpen = expanded === key;
-            const program = log.source === "Boot Camp" ? data.bootcampProgram : data.program;
-            return (
-              <Card key={key} style={{ padding: 0 }}>
-                <button
-                  onClick={() => setExpanded(isOpen ? null : key)}
-                  style={{ width: "100%", background: "none", border: "none", color: COLORS.text, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left" }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{log.dayName || "Workout"}</div>
-                    <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
-                      {fmtDate(log.date)} · {(log.entries || []).length} exercises{log.source === "Boot Camp" ? " · Boot Camp" : ""}{log.freeform ? " · Self-logged" : ""}
-                    </div>
-                  </div>
-                  <ChevronDown size={18} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none", flexShrink: 0 }} />
-                </button>
-                {isOpen && (
-                  <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-                    {(log.entries || []).map((entry, i) => (
-                      <div key={i}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.accent, marginBottom: 2 }}>
-                          {exercises.find((e) => e.id === entry.exerciseId)?.name || resolveLogExerciseName(log, entry, program || { days: [] }, exercises)}
-                        </div>
-                        {(entry.sets || []).map((s, si) => (
-                          <div key={si} style={{ fontSize: 12, color: COLORS.textMuted, paddingLeft: 8 }}>
-                            Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: COLORS.textMuted, marginRight: 2 }}>Rest timer:</span>
+          {[30, 45, 60, 90, 120].map((d) => (
+            <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
+              {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -5722,34 +5681,17 @@ function WeekCalendar({ days, scheduleOverrides, dayIdx, onSelectDay, onMoveDay 
 
 function TodayTab({ data, exercises, onSave, clientName }) {
   const days = data.program?.days || [];
-  const [dayIdx, setDayIdx] = useState(() => {
-    const saved = lsGet("xcel_dayidx_today");
-    return saved && saved.date === todayISO() && saved.idx < days.length ? saved.idx : 0;
-  });
-  useEffect(() => { lsSet("xcel_dayidx_today", { date: todayISO(), idx: dayIdx }); }, [dayIdx]);
+  const [dayIdx, setDayIdx] = useState(0);
   const day = days[dayIdx];
-  // Unsaved sets are kept on the phone until they hit Save, so nothing is lost if the app closes.
-  const draftKey = day ? `xcel_draft_${day.id}_${todayISO()}` : null;
   const todayLog = useMemo(() => data.logs.find((l) => l.date === todayISO() && l.dayId === day?.id), [data.logs, day]);
-  const [entries, setEntries] = useState(() => (draftKey && lsGet(draftKey)) || todayLog?.entries || []);
-  const [minimized, setMinimized] = useState(() => !!todayLog && !(draftKey && lsGet(draftKey)));
+  const [entries, setEntries] = useState(() => todayLog?.entries || []);
+  const [minimized, setMinimized] = useState(() => !!todayLog);
   const [showFreeform, setShowFreeform] = useState(false);
 
   useEffect(() => {
-    const draft = draftKey && lsGet(draftKey);
-    setEntries(draft || todayLog?.entries || []);
-    setMinimized(!!todayLog && !draft);
+    setEntries(todayLog?.entries || []);
+    setMinimized(!!todayLog);
   }, [dayIdx, todayLog]);
-  // Which exercise cards are expanded. Starts with just the first one open.
-  const [openEx, setOpenEx] = useState(() => (day?.exercises?.[0] ? [day.exercises[0].id] : []));
-
-  useEffect(() => {
-    setOpenEx(day?.exercises?.[0] ? [day.exercises[0].id] : []);
-  }, [dayIdx]);
-
-  const toggleEx = (id) => setOpenEx((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  const allOpen = day?.exercises?.length > 0 && openEx.length === day.exercises.length;
-  const toggleAll = () => setOpenEx(allOpen ? [] : (day?.exercises || []).map((ex) => ex.id));
 
   const notifyTrainer = async (workoutLabel) => {
     const trainerSub = await sGet("app:trainerPushSubscription", null);
@@ -5794,16 +5736,13 @@ function TodayTab({ data, exercises, onSave, clientName }) {
     const current = getSetsFor(dayExId, defaultSets);
     const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
     const others = entries.filter((e) => e.dayExId !== dayExId);
-    const next = [...others, { dayExId, exerciseId, sets: nextSets }];
-    setEntries(next);
-    if (draftKey) lsSet(draftKey, next);
+    setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
 
   const saveWorkout = async () => {
     const logs = data.logs.filter((l) => !(l.date === todayISO() && l.dayId === day.id));
     logs.push({ date: todayISO(), dayId: day.id, dayName: day.name, entries });
     await onSave({ ...data, logs });
-    if (draftKey) lsDel(draftKey);
     notifyTrainer(day.name);
     setMinimized(true);
   };
@@ -5855,62 +5794,37 @@ function TodayTab({ data, exercises, onSave, clientName }) {
         </Card>
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            <button onClick={toggleAll} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "4px 0" }}>
-              {allOpen ? "Collapse all" : "Expand all"}
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {day.exercises.map((ex) => {
               const exDef = exercises.find((e) => e.id === ex.exerciseId);
               const sets = getSetsFor(ex.id, ex.sets);
               const last = findLastSets(data.logs, ex.exerciseId, todayISO(), day.id);
-              const isOpen = openEx.includes(ex.id);
-              const doneSets = sets.filter((s) => s.reps || s.weight).length;
-              const allDone = doneSets === sets.length && sets.length > 0;
               return (
-                <Card key={ex.id} style={{ padding: 0 }}>
-                  <button
-                    onClick={() => toggleEx(ex.id)}
-                    style={{ width: "100%", background: "none", border: "none", color: COLORS.text, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer", textAlign: "left" }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
-                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Target: {ex.sets} × {ex.reps}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: allDone ? COLORS.lime : COLORS.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
-                        {allDone && <Check size={13} />}{doneSets}/{sets.length} sets
-                      </span>
-                      <ChevronDown size={18} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none" }} />
-                    </div>
-                  </button>
-                  {isOpen && (
-                    <div style={{ padding: "0 16px 16px" }}>
-                      {last && (
-                        <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
-                          Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
-                        </div>
-                      )}
-                      <a
-                        href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
-                      >
-                        Watch example ↗
-                      </a>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {sets.map((s, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
-                            <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
-                            <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
-                          </div>
-                        ))}
-                      </div>
+                <Card key={ex.id}>
+                  <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 14 }}>{exDef?.name || "Exercise"}</div>
+                  <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Target: {ex.sets} × {ex.reps}</div>
+                  {last && (
+                    <div style={{ fontSize: 11, color: COLORS.accent, marginBottom: 6 }}>
+                      Last time ({fmtDate(last.date)}): {formatSets(last.sets)}
                     </div>
                   )}
+                  <a
+                    href={exDef?.videoUrl && toYouTubeEmbed(exDef.videoUrl) ? exDef.videoUrl : exerciseSearchUrl(exDef?.name)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 11, color: COLORS.accent, marginBottom: 10, display: "inline-block" }}
+                  >
+                    Watch example ↗
+                  </a>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {sets.map((s, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: COLORS.textMuted, width: 42 }}>Set {i + 1}</span>
+                        <input placeholder="reps" style={{ ...inputStyle, width: 70 }} value={s.reps} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "reps", e.target.value)} />
+                        <input placeholder="lbs" style={{ ...inputStyle, width: 70 }} value={s.weight} onChange={(e) => updateSet(ex.id, ex.exerciseId, ex.sets, i, "weight", e.target.value)} />
+                      </div>
+                    ))}
+                  </div>
                 </Card>
               );
             })}
