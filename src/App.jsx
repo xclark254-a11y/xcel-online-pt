@@ -11,6 +11,8 @@ import { TRAVEL_TEMPLATES } from "./travelProgram";
 import { BOBBI_TEMPLATES } from "./bobbiProgram";
 import { ANUJ_TEMPLATES } from "./anujProgram";
 import { ERIN_TEMPLATES } from "./erinProgram";
+import { KRITI_TEMPLATES } from "./kritiProgram";
+import { ROHAN_TEMPLATES } from "./rohanProgram";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function toYouTubeEmbed(url) {
@@ -1239,6 +1241,8 @@ TEMPLATE_PROGRAMS.push(...TRAVEL_TEMPLATES);
 TEMPLATE_PROGRAMS.push(...BOBBI_TEMPLATES);
 TEMPLATE_PROGRAMS.push(...ANUJ_TEMPLATES);
 TEMPLATE_PROGRAMS.push(...ERIN_TEMPLATES);
+TEMPLATE_PROGRAMS.push(...KRITI_TEMPLATES);
+TEMPLATE_PROGRAMS.push(...ROHAN_TEMPLATES);
 
 const MOBILITY_ROUTINES = [
   {
