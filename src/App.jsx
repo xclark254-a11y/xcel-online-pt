@@ -2197,8 +2197,9 @@ function ClientsTab({ clients, exercises, onRefresh }) {
 
   const [inviteRefresh, setInviteRefresh] = useState(0);
 
-  const activeClients = clients.filter((c) => c.status !== "paused");
-  const pausedClients = clients.filter((c) => c.status === "paused");
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const activeClients = clients.filter((c) => c.status !== "paused").slice().sort(byName);
+  const pausedClients = clients.filter((c) => c.status === "paused").slice().sort(byName);
   const visibleClients = showPaused ? pausedClients : activeClients;
 
   return (
@@ -2276,16 +2277,37 @@ function ClientsTab({ clients, exercises, onRefresh }) {
                 </div>
               </div>
             )}
-            <IntakeViewer clientId={c.id} />
-            <NutritionViewer clientId={c.id} />
-            <ProgressPhotosViewer clientId={c.id} />
-            <BodyStatsViewer clientId={c.id} />
-            <LogWorkoutForClient clientId={c.id} clientName={c.name} exercises={exercises} />
-            <WorkoutLogViewer clientId={c.id} exercises={exercises} />
-            <ProgramScheduleViewer clientId={c.id} />
+            <ClientDetails clientId={c.id} clientName={c.name} exercises={exercises} />
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ClientDetails({ clientId, clientName, exercises }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ background: "none", border: "none", color: COLORS.text, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        <ChevronLeft size={14} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
+        Client info
+      </button>
+      {open && (
+        <div style={{ marginTop: 4 }}>
+          <IntakeViewer clientId={clientId} />
+          <NutritionViewer clientId={clientId} />
+          <ProgressPhotosViewer clientId={clientId} />
+          <BodyStatsViewer clientId={clientId} />
+          <LogWorkoutForClient clientId={clientId} clientName={clientName} exercises={exercises} />
+          <WorkoutLogViewer clientId={clientId} exercises={exercises} />
+          <ProgramScheduleViewer clientId={clientId} />
+        </div>
+      )}
     </div>
   );
 }
