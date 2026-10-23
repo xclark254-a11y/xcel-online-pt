@@ -3142,7 +3142,7 @@ function TemplateBuilder({ initial, mode, exercises, onSave, onCancel }) {
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16 }}>{mode === "edit" ? "Edit template" : "New template"}</div>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.text }}>{mode === "edit" ? "Edit template" : "New template"}</div>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer" }}><X size={18} /></button>
       </div>
 
@@ -3162,7 +3162,7 @@ function TemplateBuilder({ initial, mode, exercises, onSave, onCancel }) {
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Who is this for and what does it focus on?" />
       </Field>
 
-      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, margin: "6px 0 10px" }}>Workout days</div>
+      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14, margin: "6px 0 10px", color: COLORS.text }}>Workout days</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
         {days.map((d) => (
           <div key={d.key} style={{ background: COLORS.surfaceAlt, borderRadius: 10, padding: 12 }}>
@@ -3175,7 +3175,7 @@ function TemplateBuilder({ initial, mode, exercises, onSave, onCancel }) {
 
             {d.exercises.map((e) => (
               <div key={e.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500 }}>{e.exerciseName}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: COLORS.text }}>{e.exerciseName}</div>
                 <input type="number" min="1" style={{ ...inputStyle, width: 54, padding: "8px 6px", textAlign: "center" }} value={e.sets} onChange={(ev) => updateExercise(d.key, e.key, { sets: ev.target.value })} title="Sets" placeholder="Sets" />
                 <span style={{ color: COLORS.textMuted, fontSize: 12 }}>x</span>
                 <input style={{ ...inputStyle, width: 84, padding: "8px 6px", textAlign: "center" }} value={e.reps} onChange={(ev) => updateExercise(d.key, e.key, { reps: ev.target.value })} title="Reps (like 10-12 or 30 sec)" placeholder="Reps" />
@@ -3368,7 +3368,7 @@ function TemplatesTab({ clients, exercises }) {
     <Card key={t.id}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div>
-          <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15 }}>{t.name}{t.custom && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.lime }}>Custom</span>}</div>
+          <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: COLORS.text }}>{t.name}{t.custom && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.lime }}>Custom</span>}</div>
           <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>{t.level} · {t.days.length} days/week</div>
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>{t.description}</div>
         </div>
@@ -3442,7 +3442,7 @@ function TemplatesTab({ clients, exercises }) {
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           {t.days.map((day, i) => (
             <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{day.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: COLORS.text }}>{day.name}</div>
               {day.exercises.map((ex, j) => (
                 <div key={j} style={{ fontSize: 11, color: COLORS.textMuted, display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                   <span>{ex.exerciseName}</span>
@@ -3512,7 +3512,7 @@ function TemplatesTab({ clients, exercises }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Program templates</div>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16, color: COLORS.text }}>Program templates</div>
         <Btn onClick={() => setBuilder({ mode: "new", template: blankTemplate() })}><Plus size={15} /> New template</Btn>
       </div>
       <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>"Start now" replaces their current program immediately. "Add to schedule" queues it to begin right after their current program (or last scheduled one) ends. Use "Move to folder" on any template to group them — handy for a client's multi-month program.</div>
@@ -3537,7 +3537,7 @@ function TemplatesTab({ clients, exercises }) {
                   cursor: "pointer",
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13, color: COLORS.text }}>
                   <Layers size={14} /> {folder} <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>({items.length})</span>
                 </span>
                 <ChevronLeft size={14} color={COLORS.textMuted} style={{ transform: isOpen ? "rotate(90deg)" : "rotate(-90deg)" }} />
@@ -6655,7 +6655,7 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
   }, [data, selectedExId]);
 
   const exName = (id) => exercises.find((e) => e.id === id)?.name || "Exercise";
-  const consistency = computeConsistency(data.logs);
+  const consistency = computeConsistency([...(data.logs || []), ...(data.bootcampLogs || [])]);
 
   return (
     <div>
@@ -6724,7 +6724,15 @@ function ProgressTab({ data, exercises, clientId, onSave }) {
 function ClientWorkoutHistory({ data, exercises }) {
   const [expandedLog, setExpandedLog] = useState(null);
   const [visibleCount, setVisibleCount] = useState(10);
-  const logs = useMemo(() => [...(data.logs || [])].sort((a, b) => b.date.localeCompare(a.date)), [data.logs]);
+  // Merge personal-program logs with Boot Camp logs so clients who are in
+  // Boot Camp can see their own past Boot Camp workouts here too, not just
+  // their personal program — each log is tagged with where it came from so
+  // the right program (and therefore the right exercise names) gets used.
+  const logs = useMemo(() => {
+    const personal = (data.logs || []).map((l) => ({ ...l, source: "Personal" }));
+    const bootcamp = (data.bootcampLogs || []).map((l) => ({ ...l, source: "Boot Camp" }));
+    return [...personal, ...bootcamp].sort((a, b) => b.date.localeCompare(a.date));
+  }, [data.logs, data.bootcampLogs]);
 
   if (logs.length === 0) {
     return (
@@ -6746,7 +6754,7 @@ function ClientWorkoutHistory({ data, exercises }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13 }}>{fmtDate(log.date)}</div>
-                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{log.dayName || "Workout"}{log.freeform ? " · self-logged" : ""}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{log.dayName || "Workout"}{log.freeform ? " · self-logged" : ""}{log.source === "Boot Camp" ? " · Boot Camp" : ""}</div>
                 </div>
                 <ChevronLeft size={16} color={COLORS.textMuted} style={{ transform: open ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
               </div>
@@ -6754,7 +6762,7 @@ function ClientWorkoutHistory({ data, exercises }) {
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
                   {(log.entries || []).map((entry, i) => (
                     <div key={i} style={{ background: COLORS.surfaceAlt, borderRadius: 8, padding: 10 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{resolveLogExerciseName(log, entry, data.program, exercises)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{resolveLogExerciseName(log, entry, log.source === "Boot Camp" ? data.bootcampProgram : data.program, exercises)}</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         {(entry.sets || []).map((s, si) => (
                           <div key={si} style={{ fontSize: 12, color: COLORS.textMuted }}>Set {si + 1}: {s.reps || "—"} reps × {s.weight || "—"} lbs</div>
