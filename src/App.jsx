@@ -17,6 +17,7 @@ import { SHAY_TEMPLATES } from "./shayProgram";
 import { ROCK_TEMPLATES } from "./rockProgram";
 import { LORI_TEMPLATES } from "./loriProgram";
 import { JODY_TEMPLATES } from "./jodyProgram";
+import RepairExerciseLinks from "./repairExerciseLinks";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 function toYouTubeEmbed(url) {
@@ -2015,7 +2016,7 @@ function TrainerConsole({ clients, exercises, onRefreshClients, onRefreshExercis
       <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
         {tab === "clients" && <ClientsTab clients={clients} exercises={exercises} onRefresh={onRefreshClients} />}
         {tab === "bootcamp" && <BootCampAdminTab clients={clients} exercises={exercises} />}
-        {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} />}
+        {tab === "library" && <LibraryTab exercises={exercises} onRefresh={onRefreshExercises} clients={clients} />}
         {tab === "templates" && <TemplatesTab clients={clients} exercises={exercises} />}
         {tab === "mobility" && <MobilityTab clients={clients} />}
         {tab === "programs" && <ProgramsTab clients={clients} exercises={exercises} />}
@@ -2979,7 +2980,7 @@ function EditClientRow({ client, onSave, onCancel }) {
   );
 }
 
-function LibraryTab({ exercises, onRefresh }) {
+function LibraryTab({ exercises, onRefresh, clients = [] }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", muscle: "Legs", equipment: "Barbell", instructions: "", videoUrl: "" });
   const [muscleFilter, setMuscleFilter] = useState("All");
@@ -3005,6 +3006,7 @@ function LibraryTab({ exercises, onRefresh }) {
 
   return (
     <div>
+      <RepairExerciseLinks clients={clients} exercises={exercises} templates={TEMPLATE_PROGRAMS} seedExercises={SEED_EXERCISES} onRefresh={onRefresh} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Exercise Library ({exercises.length})</div>
         <Btn onClick={() => setAdding(!adding)} variant={adding ? "ghost" : "primary"}>
