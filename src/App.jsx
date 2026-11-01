@@ -379,6 +379,19 @@ function promoteScheduledPrograms(data) {
 }
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Speeds up logging: when a set's reps or weight is typed, the sets after it
+// copy the value as long as they're still blank or still match what this set
+// had before the edit (i.e. they were auto-filled, not typed in separately).
+// A set the client changed on its own keeps its own number.
+function autofillSets(sets, setIdx, field, value) {
+  const oldValue = sets[setIdx]?.[field] ?? "";
+  return sets.map((s, i) => {
+    if (i === setIdx) return { ...s, [field]: value };
+    if (i > setIdx && ((s[field] ?? "") === "" || s[field] === oldValue)) return { ...s, [field]: value };
+    return s;
+  });
+}
+
 function resolveLogExerciseName(log, entry, program, exercises) {
   // entry.exerciseId points straight at the library exercise and stays valid
   // even after the client's program is edited, reassigned, or replaced —
@@ -2711,7 +2724,7 @@ function LogWorkoutForClient({ clientId, clientName, exercises }) {
 
   const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
-    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const nextSets = autofillSets(current, setIdx, field, value);
     const others = entries.filter((e) => e.dayExId !== dayExId);
     setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
@@ -3603,7 +3616,7 @@ function BootCampLogForm({ clientId, day, exercises, onSaved }) {
 
   const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
-    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const nextSets = autofillSets(current, setIdx, field, value);
     const others = entries.filter((e) => e.dayExId !== dayExId);
     setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
@@ -5319,7 +5332,7 @@ function BootCampTab({ data, exercises, onSave, clientName }) {
 
   const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
-    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const nextSets = autofillSets(current, setIdx, field, value);
     const others = entries.filter((e) => e.dayExId !== dayExId);
     setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
@@ -5451,7 +5464,7 @@ function FreeformWorkoutForm({ exercises, onSave, onCancel }) {
   const addSet = (id) => setItems(items.map((it) => (it.id === id ? { ...it, sets: [...it.sets, { reps: "", weight: "" }] } : it)));
   const removeSet = (id, idx) => setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.filter((_, i) => i !== idx) } : it)));
   const updateSet = (id, idx, field, value) =>
-    setItems(items.map((it) => (it.id === id ? { ...it, sets: it.sets.map((s, i) => (i === idx ? { ...s, [field]: value } : s)) } : it)));
+    setItems(items.map((it) => (it.id === id ? { ...it, sets: autofillSets(it.sets, idx, field, value) } : it)));
 
   const canSave = !!date && items.length > 0;
 
@@ -5566,6 +5579,7 @@ function FreeformHistory({ logs, exercises, onDelete }) {
 }
 
 function RestTimer() {
+  const [open, setOpen] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [running, setRunning] = useState(false);
   const intervalRef = useRef(null);
@@ -5632,31 +5646,52 @@ function RestTimer() {
     color: COLORS.text,
   };
 
+  // Floating so it stays on screen while the client scrolls through their
+  // sets — sits just above the bottom tab bar, no need to go back to the top.
+  const floatStyle = {
+    position: "fixed",
+    right: 12,
+    bottom: "calc(78px + env(safe-area-inset-bottom))",
+    zIndex: 40,
+    background: COLORS.surface,
+    border: `1px solid ${COLORS.accent}`,
+    borderRadius: 14,
+    padding: 8,
+    boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+    maxWidth: "calc(100vw - 24px)",
+  };
+
+  if (seconds > 0) {
+    return (
+      <div style={{ ...floatStyle, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px" }}>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 26, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent }}>
+          {mm}:{String(ss).padStart(2, "0")}
+        </span>
+        <button onClick={() => addTime(15)} style={presetBtnStyle}>+15s</button>
+        <button onClick={stop} style={presetBtnStyle}>{running ? "Cancel" : "Dismiss"}</button>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{ ...floatStyle, display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", cursor: "pointer", color: COLORS.text, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}
+      >
+        <Clock size={16} color={COLORS.accent} /> Rest timer
+      </button>
+    );
+  }
+
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 5, background: COLORS.bg, borderBottom: `1px solid ${COLORS.border}`, padding: "10px 0", marginBottom: 14 }}>
-      {seconds > 0 ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 28, color: running && seconds <= 5 ? COLORS.danger : COLORS.accent }}>
-              {mm}:{String(ss).padStart(2, "0")}
-            </span>
-            <span style={{ fontSize: 11, color: COLORS.textMuted }}>{running ? "resting…" : "time's up"}</span>
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => addTime(15)} style={presetBtnStyle}>+15s</button>
-            <button onClick={stop} style={presetBtnStyle}>{running ? "Cancel" : "Dismiss"}</button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: COLORS.textMuted, marginRight: 2 }}>Rest timer:</span>
-          {[30, 45, 60, 90, 120].map((d) => (
-            <button key={d} onClick={() => start(d)} style={presetBtnStyle}>
-              {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
-            </button>
-          ))}
-        </div>
-      )}
+    <div style={{ ...floatStyle, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+      {[30, 45, 60, 90, 120].map((d) => (
+        <button key={d} onClick={() => { start(d); setOpen(false); }} style={presetBtnStyle}>
+          {d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, "0")}`}
+        </button>
+      ))}
+      <button onClick={() => setOpen(false)} style={presetBtnStyle}>✕</button>
     </div>
   );
 }
@@ -5777,6 +5812,7 @@ function TodayTab({ data, exercises, onSave, clientName }) {
   if (days.length === 0) {
     return (
       <div>
+        <RestTimer />
         <Card style={{ textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
           Your trainer hasn't assigned a program yet. Check back soon, or see a note in Messages.
         </Card>
@@ -5800,7 +5836,7 @@ function TodayTab({ data, exercises, onSave, clientName }) {
 
   const updateSet = (dayExId, exerciseId, defaultSets, setIdx, field, value) => {
     const current = getSetsFor(dayExId, defaultSets);
-    const nextSets = current.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s));
+    const nextSets = autofillSets(current, setIdx, field, value);
     const others = entries.filter((e) => e.dayExId !== dayExId);
     setEntries([...others, { dayExId, exerciseId, sets: nextSets }]);
   };
