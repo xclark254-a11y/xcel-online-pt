@@ -630,6 +630,15 @@ const SEED_EXERCISES = [
 ];
 
 SEED_EXERCISES.push(...BOOTCAMP_EXERCISES.map((e) => ({ id: uid(), ...e })));
+// Exercise IDs must stay the same every time the app loads, because clients'
+// saved programs and workout logs point at an exercise by this id, not by
+// name. uid() above is random, so instead we overwrite it here with a
+// stable id derived from the exercise's own name. That way, even if the
+// exercise library ever has to be reseeded, every existing program/log
+// still finds the exercise it's pointing at.
+SEED_EXERCISES.forEach((e) => {
+  e.id = "ex-" + e.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+});
 
 const MUSCLES = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.muscle)))];
 const EQUIPMENT = ["All", ...Array.from(new Set(SEED_EXERCISES.map(e => e.equipment)))];
@@ -1504,9 +1513,19 @@ export default function App() {
   useEffect(() => {
     (async () => {
       let ex = await sGet("app:exercises", null);
-      if (!ex) {
+      const cl = await sGet("app:clients", []);
+      if (!ex || ex.length === 0) {
         ex = SEED_EXERCISES;
-        await sSet("app:exercises", ex);
+        // Only persist a fresh seed if this really looks like a first-ever
+        // load (no clients yet). If clients already exist but the exercise
+        // library came back empty, that's almost certainly a dropped/failed
+        // read, not an empty app — so use the seed for this session without
+        // overwriting whatever is actually saved in Firestore, rather than
+        // risking a bad write wiping out exercises the trainer added or
+        // edited by hand.
+        if (cl.length === 0) {
+          await sSet("app:exercises", ex);
+        }
       } else {
         const existingNames = new Set(ex.map((e) => e.name));
         const missing = SEED_EXERCISES.filter((se) => !existingNames.has(se.name));
@@ -1515,7 +1534,6 @@ export default function App() {
           await sSet("app:exercises", ex);
         }
       }
-      const cl = await sGet("app:clients", []);
       const pin = await sGet("app:trainerPin", null);
       setExercises(ex);
       setClients(cl);
